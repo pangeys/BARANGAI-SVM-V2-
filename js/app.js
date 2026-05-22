@@ -1,59 +1,177 @@
 /* ═══════════════════════════════════════════════════════
-   BICTS — js/app.js
+   BICTS — js/app.js  (DB-connected version)
    Core application logic: navigation, modals, complaints
    store, wizard flow, and boot sequence.
+
+   Changes from original:
+     • complaints[], notifStore[], nextId are loaded from
+       MySQL via api.php on every page load.
+     • addComplaint(), resolveComplaint(), advanceStatus(),
+       pushNotif() all sync to the DB automatically.
+     • Full in-memory fallback if api.php is unreachable.
+
    Depends on: data.js, classifier.js, render.js, dataset.js
 ═══════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════
-   COMPLAINTS STORE
+   API CONFIG
+   Points to api.php in the same folder as index.html.
+══════════════════════════════════════════════════════ */
+const API_URL = 'api.php';
+
+/* ══════════════════════════════════════════════════════
+   COMPLAINTS STORE  (in-memory cache, synced to DB)
 ══════════════════════════════════════════════════════ */
 let complaints = [];
 let nextId     = 1;
 let notifStore = [];
 
-function addComplaint(data) {
-  const id   = '#' + String(nextId).padStart(3, '0');
-  const date = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
-  complaints.unshift({ id, date, ...data });
+/* ── Load everything from the database on boot ── */
+async function loadFromDB() {
+  try {
+    const res  = await fetch(API_URL + '?type=init');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+
+    complaints = data.complaints  || [];
+    notifStore = data.notifications || [];
+    nextId     = parseInt(data.nextId) || 1;
+
+    console.log('BICTS: Loaded from DB —', complaints.length, 'complaints,', notifStore.length, 'notifications.');
+  } catch (err) {
+    console.warn('BICTS: Could not reach api.php, running in in-memory mode.', err);
+    complaints = [];
+    notifStore = [];
+    nextId     = 1;
+  }
+
+  /* Render everything now that data is loaded */
+  renderAll();
+  renderNotifs();
+}
+
+/* ── Add a new complaint (saves to DB, updates local cache) ── */
+async function addComplaint(data) {
+  const dateFiled = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+
+  try {
+    const res    = await fetch(API_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        action: 'add_complaint',
+        data:   { ...data, date_filed: dateFiled },
+      }),
+    });
+    const result = await res.json();
+
+    if (result.success) {
+      /* Push to local cache using the server-assigned ID */
+      const newComplaint = { id: result.id, date: dateFiled, ...data };
+      complaints.unshift(newComplaint);
+      renderAll();
+      return newComplaint;
+    }
+  } catch (err) {
+    console.warn('BICTS: DB save failed, using in-memory fallback.', err);
+  }
+
+  /* In-memory fallback */
+  const id = '#' + String(nextId).padStart(3, '0');
+  complaints.unshift({ id, date: dateFiled, ...data });
   nextId++;
   renderAll();
   return complaints[0];
 }
 
-function resolveComplaint(id) {
+/* ── Resolve a complaint (updates DB + local cache) ── */
+async function resolveComplaint(id) {
   const c = complaints.find(x => x.id === id);
   if (!c || c.status === 'Resolved') return;
+
   c.status     = 'Resolved';
   c.sb         = 'b-green';
   c.resolvedAt = new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-  pushNotif('Complaint ' + id + ' (' + c.category + ') marked as Resolved.', 'success');
+
+  /* Optimistic update first, then sync */
   renderAll();
+
+  try {
+    await fetch(API_URL, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        action:      'update_status',
+        id,
+        status:      'Resolved',
+        sb:          'b-green',
+        resolved_at: c.resolvedAt,
+      }),
+    });
+  } catch (err) {
+    console.warn('BICTS: DB status sync failed.', err);
+  }
+
+  await pushNotif('Complaint ' + id + ' (' + c.category + ') marked as Resolved.', 'success');
 }
 
-function advanceStatus(id) {
+/* ── Advance complaint to the next status step ── */
+async function advanceStatus(id) {
   const c = complaints.find(x => x.id === id);
   if (!c) return;
+
   const idx = STATUS_FLOW.indexOf(c.status);
-  if (idx < STATUS_FLOW.length - 1) {
-    c.status = STATUS_FLOW[idx + 1];
-    c.sb     = statusBadge(c.status);
-    if (c.status === 'Resolved') {
-      c.resolvedAt = new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-      pushNotif('Complaint ' + id + ' (' + c.category + ') marked as Resolved.', 'success');
-    }
-    renderAll();
+  if (idx >= STATUS_FLOW.length - 1) return;
+
+  c.status = STATUS_FLOW[idx + 1];
+  c.sb     = statusBadge(c.status);
+
+  if (c.status === 'Resolved') {
+    c.resolvedAt = new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+    await pushNotif('Complaint ' + id + ' (' + c.category + ') marked as Resolved.', 'success');
+  }
+
+  renderAll();
+
+  try {
+    await fetch(API_URL, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        action:      'update_status',
+        id,
+        status:      c.status,
+        sb:          c.sb,
+        resolved_at: c.resolvedAt || '',
+      }),
+    });
+  } catch (err) {
+    console.warn('BICTS: DB status sync failed.', err);
   }
 }
 
-function pushNotif(msg, type) {
-  notifStore.unshift({
-    msg, type,
-    time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-  });
+/* ── Push a notification (saves to DB + local cache) ── */
+async function pushNotif(msg, type) {
+  const time = new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+  notifStore.unshift({ msg, type, time });
   renderNotifs();
+
+  /* Bell flash */
   const bell = document.querySelector('.topbar-action');
-  if (bell) { bell.style.background = 'var(--sky-light)'; setTimeout(() => { bell.style.background = ''; }, 1200); }
+  if (bell) {
+    bell.style.background = 'var(--sky-light)';
+    setTimeout(() => { bell.style.background = ''; }, 1200);
+  }
+
+  try {
+    await fetch(API_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'add_notification', msg, notif_type: type, time }),
+    });
+  } catch (err) {
+    console.warn('BICTS: Notification DB save failed.', err);
+  }
 }
 
 /* Re-render all live sections */
@@ -120,7 +238,7 @@ function viewComplaint(id) {
   const badgeRow = document.getElementById('detail-badge-row');
   if (badgeRow) {
     badgeRow.innerHTML =
-      '<span class="badge b-blue">' + c.category + '</span>' +
+      '<span class="badge b-blue">'   + c.category + '</span>' +
       '<span class="badge ' + c.pb + '">' + c.priority + ' Priority</span>' +
       '<span class="badge ' + c.sb + '">' + c.status   + '</span>';
   }
@@ -188,7 +306,7 @@ function initModalBackdropClose() {
 /* ══════════════════════════════════════════════════════
    SUBMIT COMPLAINT WIZARD
 ══════════════════════════════════════════════════════ */
-let wizardStep   = 1;
+let wizardStep    = 1;
 const TOTAL_STEPS = 4;
 let _lastAiResult = { cat: CATEGORIES[0], conf: 75, scores: {} };
 
@@ -216,7 +334,7 @@ function wizardBack() {
   if (wizardStep > 1) { wizardStep--; renderWizardStep(); }
 }
 
-function wizardSubmit() {
+async function wizardSubmit() {
   const description = document.getElementById('w-description')?.value || '';
   const affected    = document.getElementById('w-affected')?.value    || '1';
   const cat         = _lastAiResult.cat;
@@ -224,7 +342,11 @@ function wizardSubmit() {
   const ahp         = computeAHPScore(cat, affected, description);
   const priInfo     = priorityLabel(ahp.score);
 
-  addComplaint({
+  /* Show a brief loading indicator on the submit button */
+  const submitBtn = document.getElementById('wizard-submit');
+  if (submitBtn) { submitBtn.textContent = 'Saving…'; submitBtn.disabled = true; }
+
+  await addComplaint({
     description,
     location:    document.getElementById('w-location')?.value    || '',
     date:        document.getElementById('w-date')?.value        || '',
@@ -241,7 +363,9 @@ function wizardSubmit() {
     sb:          'b-gray',
   });
 
-  pushNotif('New complaint — ' + cat + ' · Priority: ' + priInfo.label, 'info');
+  await pushNotif('New complaint — ' + cat + ' · Priority: ' + priInfo.label, 'info');
+
+  if (submitBtn) { submitBtn.textContent = '✓ Submit Complaint'; submitBtn.disabled = false; }
   wizardStep = 5;
   renderWizardStep();
 }
@@ -362,32 +486,30 @@ function initToggles() {
 
 /* ══════════════════════════════════════════════════════
    BOOT
+   Order: load classifier → fetch DB data → render static
 ══════════════════════════════════════════════════════ */
-document.addEventListener('DOMContentLoaded', () => {
-  /* Load real SVM model first — classifier.js handles fallback if fetch fails */
-  initClassifier();
+document.addEventListener('DOMContentLoaded', async () => {
 
-  /* Static renders (data from data.js) */
+  /* 1. Load the real SVM model (classifier.js handles fallback) */
+  await initClassifier();
+
+  /* 2. Fetch all persisted data from the database */
+  await loadFromDB();
+
+  /* 3. Static renders that don't depend on complaints (data.js constants) */
   renderAccuracyBars();
   renderDashboardDonut();
-  renderCriticalCases();
-  renderDashboardStats();
-  renderComplaints();
-  renderPriorityQueue();
-  renderKanban();
   renderDatasetVersionTable();
   renderModelComparison();
   renderF1Table();
   renderNlpPipeline();
   renderAugTags();
   renderReports();
-  renderWeeklyBars();
   renderIsoEval();
   renderUsers();
-  renderNotifs();
   renderSettings();
 
-  /* UI behaviour */
+  /* 4. UI behaviour */
   initModalBackdropClose();
   initTabs();
   initToggles();
