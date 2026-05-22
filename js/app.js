@@ -218,8 +218,7 @@ function doLogin() {
 }
 
 function doLogout() {
-  document.getElementById('shell').style.display        = 'none';
-  document.getElementById('login-screen').style.display = 'flex';
+  fetch('api/auth.php?action=logout').finally(() => location.href = 'login.html');
 }
 
 /* ══════════════════════════════════════════════════════

@@ -23,13 +23,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $stmt = $db->prepare("
         INSERT INTO complaints
-          (complaint_no, date_filed, incident_date, incident_time, location,
+          (complaint_id, date_filed, incident_date, incident_time, location,
            description, complainant, affected, category, confidence,
            priority, score, officer, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
 
-    $complaint_no  = $body['id']            ?? '#000';
+    $complaint_id = $body['id']            ?? '#000';
     $date_filed    = date('Y-m-d');
     $incident_date = $body['date']          ?? null;
     $incident_time = $body['time']          ?? null;
@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $stmt->bind_param(
         'sssssssissddss',
-        $complaint_no, $date_filed, $incident_date, $incident_time,
+        $complaint_id, $date_filed, $incident_date, $incident_time,
         $location, $description, $complainant, $affected,
         $category, $confidence, $priority, $score, $officer, $status
     );

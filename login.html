@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BarangAI – Sign In</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .auth-switch{text-align:center;margin-top:14px;font-size:12px;color:var(--text3)}
+  .auth-switch a{color:var(--blue);cursor:pointer;font-weight:600;text-decoration:none}
+  .auth-switch a:hover{text-decoration:underline}
+  .auth-msg{margin-top:12px;padding:10px 12px;border-radius:8px;font-size:12px;display:none;line-height:1.5}
+  .auth-msg.err{display:block;background:rgba(192,57,43,.12);color:#c0392b}
+  .auth-msg.ok{display:block;background:rgba(30,126,52,.12);color:#1e7e34}
+  .row2{display:flex;gap:12px}
+  .row2 .field{flex:1}
+  .auth-hidden{display:none !important}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-deco"></div>
+  <div class="login-deco"></div>
+
+  <!-- LOGIN CARD -->
+  <div class="login-card" id="loginCard">
+    <div class="login-logo">Barang<span>AI</span></div>
+    <div class="login-sub">Barangay Intelligent Case Tracking System<br>Authorized personnel only</div>
+
+    <div id="loginMsg" class="auth-msg"></div>
+
+    <div class="field" style="margin-bottom:12px;">
+      <div class="label">Username / Email</div>
+      <input class="inp filled" id="loginId" type="text" placeholder="Enter your email">
+    </div>
+    <div class="field" style="margin-bottom:20px;">
+      <div class="label">Password</div>
+      <input class="inp filled" id="loginPw" type="password" placeholder="Enter your password">
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);">
+        <input type="checkbox" checked> Remember me
+      </label>
+      <span style="font-size:12px;color:var(--blue);cursor:pointer;">Forgot password?</span>
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px;" id="signInBtn">Sign In →</button>
+    <div style="text-align:center;margin-top:14px;font-size:11px;color:var(--text3);">System access is restricted to authorized barangay personnel only.</div>
+    <div class="auth-switch">Are you a resident? <a id="toSignup">Create an account</a></div>
+  </div>
+
+  <!-- SIGN UP CARD -->
+  <div class="login-card auth-hidden" id="signupCard">
+    <div class="login-logo">Barang<span>AI</span></div>
+    <div class="login-sub">Resident Registration<br>Submit and track your complaints</div>
+
+    <div id="signupMsg" class="auth-msg"></div>
+
+    <div class="field" style="margin-bottom:12px;">
+      <div class="label">Full Name *</div>
+      <input class="inp filled" id="su_name" type="text" placeholder="Juan Dela Cruz">
+    </div>
+    <div class="field" style="margin-bottom:12px;">
+      <div class="label">Email *</div>
+      <input class="inp filled" id="su_email" type="email" placeholder="you@example.com">
+    </div>
+    <div class="field" style="margin-bottom:12px;">
+      <div class="label">Barangay *</div>
+      <select class="inp sel" id="su_brgy"><option value="">Select your barangay…</option></select>
+    </div>
+    <div class="row2">
+      <div class="field" style="margin-bottom:12px;">
+        <div class="label">Password *</div>
+        <input class="inp filled" id="su_pw" type="password" placeholder="Min 6 chars">
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <div class="label">Confirm *</div>
+        <input class="inp filled" id="su_pw2" type="password" placeholder="Re-type">
+      </div>
+    </div>
+    <div class="field" style="margin-bottom:12px;">
+      <div class="label">Phone (optional)</div>
+      <input class="inp filled" id="su_phone" type="text" placeholder="09XXXXXXXXX">
+    </div>
+    <div class="field" style="margin-bottom:20px;">
+      <div class="label">Address (optional)</div>
+      <input class="inp filled" id="su_addr" type="text" placeholder="House no., street, purok">
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px;" id="signUpBtn">Create Account →</button>
+    <div class="auth-switch">Already have an account? <a id="toLogin">Sign in</a></div>
+  </div>
+
+</div>
+
+<script>
+const API = 'api/auth.php';
+const $ = id => document.getElementById(id);
+
+function showMsg(elId, type, text) {
+  const el = $(elId);
+  el.className = 'auth-msg ' + type;
+  el.textContent = text;
+}
+function clearMsg(elId) {
+  $(elId).className = 'auth-msg';
+  $(elId).textContent = '';
+}
+
+$('toSignup').addEventListener('click', function() {
+  $('loginCard').classList.add('auth-hidden');
+  $('signupCard').classList.remove('auth-hidden');
+  loadBarangays();
+});
+$('toLogin').addEventListener('click', function() {
+  $('signupCard').classList.add('auth-hidden');
+  $('loginCard').classList.remove('auth-hidden');
+});
+
+async function doLogin() {
+  clearMsg('loginMsg');
+  var id = $('loginId').value.trim();
+  var pw = $('loginPw').value;
+  if (!id || !pw) { showMsg('loginMsg','err','Enter your username/email and password.'); return; }
+  $('signInBtn').disabled = true;
+  $('signInBtn').textContent = 'Signing in…';
+  try {
+    var res = await fetch(API + '?action=login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({identifier:id, password:pw})
+    });
+    var data = await res.json();
+    if (!data.ok) {
+      showMsg('loginMsg','err', data.error || 'Login failed.');
+      $('signInBtn').disabled = false;
+      $('signInBtn').textContent = 'Sign In →';
+      return;
+    }
+    showMsg('loginMsg','ok','Welcome, ' + data.name + '! Redirecting…');
+    setTimeout(function() {
+      location.href = data.role === 'admin' ? 'index.html' : 'resident.html';
+    }, 700);
+  } catch(e) {
+    showMsg('loginMsg','err','Cannot reach server. Is Apache & MySQL running?');
+    $('signInBtn').disabled = false;
+    $('signInBtn').textContent = 'Sign In →';
+  }
+}
+$('signInBtn').addEventListener('click', doLogin);
+$('loginPw').addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
+
+var barangaysLoaded = false;
+async function loadBarangays() {
+  if (barangaysLoaded) return;
+  try {
+    var res = await fetch(API + '?action=barangays');
+    var data = await res.json();
+    if (data.ok) {
+      var sel = $('su_brgy');
+      data.barangays.forEach(function(b) {
+        var o = document.createElement('option');
+        o.value = b.id; o.textContent = b.name; sel.appendChild(o);
+      });
+      barangaysLoaded = true;
+    }
+  } catch(e) { showMsg('signupMsg','err','Could not load barangay list.'); }
+}
+
+async function doSignup() {
+  clearMsg('signupMsg');
+  var name=$('su_name').value.trim(), email=$('su_email').value.trim(),
+      brgy=$('su_brgy').value, pw=$('su_pw').value, pw2=$('su_pw2').value,
+      phone=$('su_phone').value.trim(), addr=$('su_addr').value.trim();
+  if (!name||!email||!brgy){ showMsg('signupMsg','err','Fill in name, email, and barangay.'); return; }
+  if (pw.length<6){ showMsg('signupMsg','err','Password must be at least 6 characters.'); return; }
+  if (pw!==pw2){ showMsg('signupMsg','err','Passwords do not match.'); return; }
+  $('signUpBtn').disabled=true; $('signUpBtn').textContent='Creating account…';
+  try {
+    var res = await fetch(API+'?action=signup',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({full_name:name,email:email,barangay_id:brgy,password:pw,phone:phone,address:addr})
+    });
+    var data = await res.json();
+    if (data.ok) {
+      showMsg('signupMsg','ok','Account created! Redirecting to sign in…');
+      var e2=email;
+      setTimeout(function(){ $('toLogin').click(); $('loginId').value=e2;
+        $('signUpBtn').disabled=false; $('signUpBtn').textContent='Create Account →'; },1300);
+    } else {
+      showMsg('signupMsg','err', data.error||'Sign up failed.');
+      $('signUpBtn').disabled=false; $('signUpBtn').textContent='Create Account →';
+    }
+  } catch(e) {
+    showMsg('signupMsg','err','Cannot reach server.');
+    $('signUpBtn').disabled=false; $('signUpBtn').textContent='Create Account →';
+  }
+}
+$('signUpBtn').addEventListener('click', doSignup);
+</script>
+</body>
+</html>

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BarangAI – Resident Portal</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  body { background: var(--bg, #f4f6fa); margin: 0; min-height: 100vh; }
+
+  /* ── TOP HEADER ── */
+  .res-header {
+    background: var(--surface, #fff);
+    border-bottom: 1px solid var(--border, #e5e8ed);
+    padding: 0 32px;
+    height: 58px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  }
+  .res-logo { font-size: 21px; font-weight: 800; color: var(--text, #1a202c); }
+  .res-logo span { color: var(--blue, #2f6fed); }
+  .res-pill {
+    background: var(--sky-light, #eef4ff);
+    color: var(--blue, #2f6fed);
+    font-size: 11px; font-weight: 700;
+    padding: 3px 10px; border-radius: 20px;
+  }
+  .res-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .res-user-info { text-align: right; }
+  .res-user-name { font-size: 13px; font-weight: 700; color: var(--text, #1a202c); }
+  .res-user-brgy { font-size: 11px; color: var(--text3, #9aa3af); }
+  .res-avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--blue, #2f6fed); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+  }
+  .res-signout {
+    font-size: 12px; color: var(--text3, #9aa3af); cursor: pointer;
+    padding: 6px 13px; border-radius: 8px;
+    border: 1px solid var(--border, #e5e8ed); background: none;
+    transition: color .15s, border-color .15s;
+  }
+  .res-signout:hover { color: #c53030; border-color: #c53030; }
+
+  /* ── BODY ── */
+  .res-body { max-width: 700px; margin: 40px auto 80px; padding: 0 24px; }
+
+  .res-welcome { margin-bottom: 22px; }
+  .res-welcome-title { font-size: 22px; font-weight: 800; color: var(--text, #1a202c); margin-bottom: 3px; }
+  .res-welcome-sub { font-size: 13px; color: var(--text3, #9aa3af); }
+
+  /* ── FORM ROW ── */
+  .frow { display: flex; gap: 14px; margin-top: 14px; }
+  .frow .field { flex: 1; margin: 0; }
+  .field { margin-top: 14px; }
+
+  .anon-note { font-size: 11px; color: var(--text3, #9aa3af); margin-top: 5px; }
+
+  /* ── MESSAGE BANNER ── */
+  .res-msg { margin-bottom: 14px; padding: 11px 14px; border-radius: 9px; font-size: 13px; display: none; }
+  .res-msg.err { display: block; background: rgba(197,48,48,.10); color: #c53030; }
+  .res-msg.ok  { display: block; background: rgba(39,103,73,.10); color: #276749; }
+
+  /* ── SUCCESS SCREEN ── */
+  .res-success { text-align: center; padding: 52px 32px; }
+  .res-success-icon  { font-size: 60px; margin-bottom: 18px; }
+  .res-success-title { font-size: 22px; font-weight: 800; color: var(--green, #38a169); margin-bottom: 8px; }
+  .res-success-ref   {
+    display: inline-block;
+    background: var(--sky-light, #eef4ff); color: var(--blue, #2f6fed);
+    font-size: 15px; font-weight: 700; padding: 8px 20px; border-radius: 10px;
+    margin-bottom: 12px; letter-spacing: .5px;
+  }
+  .res-success-sub { font-size: 13px; color: var(--text3, #9aa3af); margin-bottom: 28px; line-height: 1.7; }
+</style>
+</head>
+<body>
+
+<!-- ═══════ HEADER ═══════ -->
+<div class="res-header">
+  <div class="res-logo">Barang<span>AI</span></div>
+  <div class="res-pill">Resident Portal</div>
+  <div class="res-right">
+    <div class="res-user-info">
+      <div class="res-user-name" id="resName">Loading…</div>
+      <div class="res-user-brgy" id="resBrgy"></div>
+    </div>
+    <div class="res-avatar" id="resAvatar">…</div>
+    <button class="res-signout" onclick="doLogout()">Sign Out</button>
+  </div>
+</div>
+
+<!-- ═══════ BODY ═══════ -->
+<div class="res-body">
+
+  <!-- ── COMPLAINT FORM ── -->
+  <div id="formView">
+    <div class="res-welcome">
+      <div class="res-welcome-title">Submit a Complaint</div>
+      <div class="res-welcome-sub">Fill in the form below. Your complaint will be sent to your barangay officials for review.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div id="formMsg" class="res-msg"></div>
+
+        <div class="frow">
+          <div class="field">
+            <div class="label">Date of Incident <span>*</span></div>
+            <input class="inp" id="f_date" type="date">
+          </div>
+          <div class="field">
+            <div class="label">Time of Incident</div>
+            <input class="inp" id="f_time" type="time">
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="label">Location / Address <span>*</span></div>
+          <input class="inp" id="f_location" placeholder="e.g. Near Purok 3, beside basketball court">
+        </div>
+
+        <div class="field">
+          <div class="label">Complaint Description <span>*</span></div>
+          <textarea class="inp ta" id="f_desc" rows="6"
+            placeholder="Describe what happened in detail. The AI system will automatically classify your complaint into the correct category."></textarea>
+        </div>
+
+        <div class="frow">
+          <div class="field">
+            <div class="label">Your Name (optional)</div>
+            <input class="inp" id="f_name" placeholder="Leave blank to file anonymously">
+            <div class="anon-note">🔒 Your identity is kept confidential. Anonymous filing is allowed.</div>
+          </div>
+          <div class="field">
+            <div class="label">No. of Affected Persons</div>
+            <input class="inp" id="f_affected" type="number" min="1" placeholder="e.g. 3">
+          </div>
+        </div>
+
+        <div style="margin-top:24px;">
+          <button class="btn btn-primary" id="submitBtn"
+            style="width:100%;justify-content:center;padding:13px;font-size:15px;">
+            Submit Complaint →
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SUCCESS SCREEN ── -->
+  <div id="successView" class="card" style="display:none;">
+    <div class="res-success">
+      <div class="res-success-icon">✅</div>
+      <div class="res-success-title">Complaint Submitted!</div>
+      <div class="res-success-ref" id="successRef">CMP-2026-00001</div>
+      <div class="res-success-sub">
+        Your complaint has been received and recorded.<br>
+        Please save your <strong>complaint number</strong> above for future reference.<br>
+        Barangay officials will review and act on it as soon as possible.
+      </div>
+      <button class="btn btn-primary" style="justify-content:center;padding:10px 32px;"
+        onclick="resetForm()">
+        + Submit Another Complaint
+      </button>
+    </div>
+  </div>
+
+</div><!-- /res-body -->
+
+<script>
+const AUTH_API = 'api/auth.php';
+const SUB_API  = 'api/submit_complaint.php';
+
+/* ── session check on page load ── */
+async function init(){
+  let user = null;
+  try {
+    const r = await fetch(AUTH_API + '?action=me');
+    const d = await r.json();
+    user = d.ok ? d.user : null;
+  } catch(e){}
+
+  if (!user)                      { location.href = 'login.html'; return; }
+  if (user.role === 'admin')      { location.href = 'index.html'; return; }  // wrong page for admins
+
+  window.CURRENT_USER = user;
+
+  // fill header
+  document.getElementById('resName').textContent   = user.name;
+  document.getElementById('resBrgy').textContent   = user.barangay ? 'Brgy. ' + user.barangay : '';
+  const initials = user.name.trim().split(' ').map(w => w[0]).join('').substring(0,2).toUpperCase();
+  document.getElementById('resAvatar').textContent  = initials;
+}
+
+/* ── helpers ── */
+function showMsg(type, text){
+  const el = document.getElementById('formMsg');
+  el.className = 'res-msg ' + type;
+  el.textContent = text;
+  el.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+function clearMsg(){
+  const el = document.getElementById('formMsg');
+  el.className = 'res-msg'; el.textContent = '';
+}
+
+/* ── submit ── */
+document.getElementById('submitBtn').addEventListener('click', async () => {
+  clearMsg();
+  const date     = document.getElementById('f_date').value;
+  const time     = document.getElementById('f_time').value;
+  const location = document.getElementById('f_location').value.trim();
+  const desc     = document.getElementById('f_desc').value.trim();
+  const name     = document.getElementById('f_name').value.trim();
+  const affected = document.getElementById('f_affected').value;
+
+  if (!date)     { showMsg('err', 'Please select the date of the incident.'); return; }
+  if (!location) { showMsg('err', 'Please enter the location of the incident.'); return; }
+  if (!desc)     { showMsg('err', 'Please describe your complaint.'); return; }
+
+  document.getElementById('submitBtn').disabled = true;
+  document.getElementById('submitBtn').textContent = 'Submitting…';
+
+  try {
+    const res  = await fetch(SUB_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        incident_date: date,
+        incident_time: time || null,
+        location,
+        description: desc,
+        complainant: name || null,
+        affected: affected ? parseInt(affected) : null
+      })
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      document.getElementById('successRef').textContent = data.complaint_no;
+      document.getElementById('formView').style.display    = 'none';
+      document.getElementById('successView').style.display = '';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      showMsg('err', data.error || 'Submission failed. Please try again.');
+      resetButton();
+    }
+  } catch(e) {
+    showMsg('err', 'Cannot reach the server. Is Apache & MySQL running?');
+    resetButton();
+  }
+});
+
+function resetButton(){
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = false;
+  btn.textContent = 'Submit Complaint →';
+}
+
+function resetForm(){
+  ['f_date','f_time','f_location','f_desc','f_name','f_affected']
+    .forEach(id => document.getElementById(id).value = '');
+  document.getElementById('successView').style.display = 'none';
+  document.getElementById('formView').style.display    = '';
+  resetButton();
+  clearMsg();
+}
+
+function doLogout(){
+  fetch(AUTH_API + '?action=logout').finally(() => location.href = 'login.html');
+}
+
+init();
+</script>
+</body>
+</html>
