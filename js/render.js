@@ -313,7 +313,7 @@ function renderReports() {
     '<div style="flex:1"><div style="font-size:13px;font-weight:600;color:var(--text)">' + r.title + '</div>' +
     '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + r.desc + '</div></div>' +
     '<button class="btn btn-ghost btn-sm">View</button>' +
-    '<button class="btn btn-secondary btn-sm">Export</button>' +
+    '<button class="btn btn-primary btn-sm" onclick="downloadReportPDF(\'' + r.title + '\')">⬇ Export PDF</button>' +
     '</div></div>'
   ).join('');
 }
@@ -463,4 +463,32 @@ function renderDetailTimeline(complaint) {
 function renderCaseNotes() {
   const el = document.getElementById('case-notes');
   if (el) el.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">No notes yet</div><div class="empty-desc">Add a note to begin tracking case progress.</div></div>';
+}
+
+/* ── Map report title to API type param ── */
+function getReportType(title) {
+  if (title.includes('Classification')) return 'classification';
+  if (title.includes('Volume'))         return 'volume';
+  if (title.includes('Response'))       return 'response';
+  if (title.includes('Outcome'))        return 'outcome';
+  return 'volume';
+}
+
+/* ── Download PDF from PHP backend ── */
+function downloadReportPDF(title) {
+  const dateFrom = document.getElementById('report-date-from')?.value || '';
+  const dateTo   = document.getElementById('report-date-to')?.value   || '';
+  const type     = getReportType(title);
+
+  let url = 'http://localhost/BARANGAI-SVM-V2-/api/generate_report.php?type=' + type;
+  if (dateFrom) url += '&date_from=' + encodeURIComponent(dateFrom);
+  if (dateTo)   url += '&date_to='   + encodeURIComponent(dateTo);
+
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.target   = '_blank';
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }

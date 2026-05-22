@@ -1,4 +1,6 @@
 <?php
+error_reporting(0);
+ini_set('display_errors', 0);
 /* ═══════════════════════════════════════════════════════
    BICTS — api.php
    REST backend for complaints, notifications, ID counter.
@@ -17,7 +19,7 @@
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');       // ← change if needed
 define('DB_PASS', '');           // ← change if you set a password
-define('DB_NAME', 'barangai_db');
+define('DB_NAME', 'bicts_db');
 
 /* ── Headers ──────────────────────────────────────── */
 header("Content-Type: application/json; charset=utf-8");
