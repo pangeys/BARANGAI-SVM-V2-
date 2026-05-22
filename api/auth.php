@@ -1,7 +1,6 @@
 <?php
-// api/auth.php — handles login, signup, logout, session check, barangay list
-session_start();
-require_once 'config.php';   // gives getDB() + sets Content-Type: application/json
+if (session_status() === PHP_SESSION_NONE) session_start();
+require_once 'config.php';
 
 function out($ok, $data = [], $code = 200) {
     http_response_code($code);

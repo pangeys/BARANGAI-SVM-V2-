@@ -62,6 +62,14 @@
 
   .anon-note { font-size: 11px; color: var(--text3, #9aa3af); margin-top: 5px; }
 
+  /* ── AI CLASSIFYING INDICATOR ── */
+  .ai-hint {
+    display: none; margin-top: 10px; padding: 8px 12px;
+    background: var(--sky-light, #eef4ff); border-radius: 8px;
+    font-size: 12px; color: var(--blue, #1E5FA8);
+  }
+  .ai-hint.show { display: block; }
+
   /* ── MESSAGE BANNER ── */
   .res-msg { margin-bottom: 14px; padding: 11px 14px; border-radius: 9px; font-size: 13px; display: none; }
   .res-msg.err { display: block; background: rgba(197,48,48,.10); color: #c53030; }
@@ -76,6 +84,11 @@
     background: var(--sky-light, #eef4ff); color: var(--blue, #2f6fed);
     font-size: 15px; font-weight: 700; padding: 8px 20px; border-radius: 10px;
     margin-bottom: 12px; letter-spacing: .5px;
+  }
+  .res-success-cat {
+    display: inline-block; margin-left: 8px;
+    background: var(--bg2, #e8edf3); color: var(--text2, #4a6080);
+    font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 6px;
   }
   .res-success-sub { font-size: 13px; color: var(--text3, #9aa3af); margin-bottom: 28px; line-height: 1.7; }
 </style>
@@ -130,6 +143,7 @@
           <div class="label">Complaint Description <span>*</span></div>
           <textarea class="inp ta" id="f_desc" rows="6"
             placeholder="Describe what happened in detail. The AI system will automatically classify your complaint into the correct category."></textarea>
+          <div class="ai-hint" id="aiHint">🤖 AI will classify this complaint automatically on submit.</div>
         </div>
 
         <div class="frow">
@@ -159,9 +173,12 @@
     <div class="res-success">
       <div class="res-success-icon">✅</div>
       <div class="res-success-title">Complaint Submitted!</div>
-      <div class="res-success-ref" id="successRef">CMP-2026-00001</div>
+      <div style="margin-bottom:12px;">
+        <span class="res-success-ref" id="successRef">RES-2026-00001</span>
+        <span class="res-success-cat" id="successCat"></span>
+      </div>
       <div class="res-success-sub">
-        Your complaint has been received and recorded.<br>
+        Your complaint has been received and classified by the AI system.<br>
         Please save your <strong>complaint number</strong> above for future reference.<br>
         Barangay officials will review and act on it as soon as possible.
       </div>
@@ -174,11 +191,16 @@
 
 </div><!-- /res-body -->
 
+<!-- load classifier scripts (same ones used by admin dashboard) -->
+<script src="js/data.js"></script>
+<script src="js/dataset.js"></script>
+<script src="js/classifier.js"></script>
+
 <script>
 const AUTH_API = 'api/auth.php';
 const SUB_API  = 'api/submit_complaint.php';
 
-/* ── session check on page load ── */
+/* ── session check + load SVM model ── */
 async function init(){
   let user = null;
   try {
@@ -187,16 +209,23 @@ async function init(){
     user = d.ok ? d.user : null;
   } catch(e){}
 
-  if (!user)                      { location.href = 'login.html'; return; }
-  if (user.role === 'admin')      { location.href = 'index.html'; return; }  // wrong page for admins
+  if (!user)                 { location.href = 'login.html'; return; }
+  if (user.role === 'admin') { location.href = 'index.html'; return; }
 
   window.CURRENT_USER = user;
 
   // fill header
-  document.getElementById('resName').textContent   = user.name;
-  document.getElementById('resBrgy').textContent   = user.barangay ? 'Brgy. ' + user.barangay : '';
+  document.getElementById('resName').textContent  = user.name;
+  document.getElementById('resBrgy').textContent  = user.barangay ? 'Brgy. ' + user.barangay : '';
   const initials = user.name.trim().split(' ').map(w => w[0]).join('').substring(0,2).toUpperCase();
-  document.getElementById('resAvatar').textContent  = initials;
+  document.getElementById('resAvatar').textContent = initials;
+
+  // load SVM model
+  if (typeof initClassifier === 'function') {
+    initClassifier().then(() => {
+      document.getElementById('aiHint').classList.add('show');
+    });
+  }
 }
 
 /* ── helpers ── */
@@ -225,26 +254,49 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
   if (!location) { showMsg('err', 'Please enter the location of the incident.'); return; }
   if (!desc)     { showMsg('err', 'Please describe your complaint.'); return; }
 
-  document.getElementById('submitBtn').disabled = true;
-  document.getElementById('submitBtn').textContent = 'Submitting…';
+  document.getElementById('submitBtn').disabled    = true;
+  document.getElementById('submitBtn').textContent = 'Classifying & Submitting…';
+
+  // ── run SVM classifier ──
+  let category = '', confidence = 0, priority = 'Low', priority_badge = 'b-gray', score = '0';
+  try {
+    if (typeof classifyDescription === 'function') {
+      const classResult = classifyDescription(desc);
+      const ahpResult   = computeAHPScore(classResult.cat, parseInt(affected) || 1, desc);
+      const priInfo     = priorityLabel(ahpResult.score);
+      category       = classResult.cat;
+      confidence     = classResult.conf;
+      priority       = priInfo.label;
+      priority_badge = priInfo.badge;
+      score          = String(ahpResult.score);
+    }
+  } catch(e) {
+    console.warn('Classifier error, submitting without category:', e);
+  }
 
   try {
-    const res  = await fetch(SUB_API, {
+    const res = await fetch(SUB_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        incident_date: date,
-        incident_time: time || null,
-        location,
-        description: desc,
-        complainant: name || null,
-        affected: affected ? parseInt(affected) : null
+        incident_date:  date,
+        incident_time:  time || null,
+        location:       location,
+        description:    desc,
+        complainant:    name || null,
+        affected:       affected ? parseInt(affected) : null,
+        category:       category,
+        confidence:     confidence,
+        priority:       priority,
+        priority_badge: priority_badge,
+        score:          score
       })
     });
     const data = await res.json();
 
     if (data.ok) {
       document.getElementById('successRef').textContent = data.complaint_no;
+      document.getElementById('successCat').textContent = category || 'Unclassified';
       document.getElementById('formView').style.display    = 'none';
       document.getElementById('successView').style.display = '';
       window.scrollTo({ top: 0, behavior: 'smooth' });

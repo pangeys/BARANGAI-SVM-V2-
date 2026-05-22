@@ -1,9 +1,6 @@
 <?php
-// api/submit_complaint.php
-// Called by resident.html when a resident submits a complaint.
-// Inserts into the existing `complaints` table in bicts_db.
-session_start();
-require_once 'config.php';   // getDB() + sets Content-Type: application/json
+if (session_status() === PHP_SESSION_NONE) session_start();
+require_once 'config.php';
 
 function out($ok, $data = [], $code = 200) {
     http_response_code($code);
@@ -11,45 +8,35 @@ function out($ok, $data = [], $code = 200) {
     exit;
 }
 
-// ── guards ────────────────────────────────────────────────────────
-if (empty($_SESSION['user']))
-    out(false, ['error' => 'Not logged in. Please sign in again.'], 401);
-
+if (empty($_SESSION['user']))     out(false, ['error' => 'Not logged in.'], 401);
 $user = $_SESSION['user'];
+if ($user['role'] !== 'resident') out(false, ['error' => 'Residents only.'], 403);
+if (!$user['barangay_id'])        out(false, ['error' => 'No barangay on your account.'], 400);
 
-if ($user['role'] !== 'resident')
-    out(false, ['error' => 'Only residents can use this endpoint.'], 403);
-
-if (!$user['barangay_id'])
-    out(false, ['error' => 'Your account has no barangay assigned. Contact admin.'], 400);
-
-// ── read form data ────────────────────────────────────────────────
-$input = json_decode(file_get_contents('php://input'), true) ?? [];
-
+$input         = json_decode(file_get_contents('php://input'), true) ?? [];
 $incident_date = $input['incident_date'] ?? '';
 $incident_time = $input['incident_time'] ?: null;
-$location      = trim($input['location']      ?? '');
-$description   = trim($input['description']   ?? '');
-$complainant   = trim($input['complainant']   ?? '') ?: 'Anonymous';
-$affected      = isset($input['affected']) && $input['affected'] !== ''
-                    ? (int)$input['affected'] : 1;
+$location      = trim($input['location']    ?? '');
+$description   = trim($input['description'] ?? '');
+$complainant   = trim($input['complainant'] ?? '') ?: 'Anonymous';
+$affected      = isset($input['affected']) && $input['affected'] !== '' ? (int)$input['affected'] : 1;
+
+// AI classification results sent from resident.html
+$category       = $input['category']       ?? '';
+$confidence     = (int)($input['confidence']  ?? 0);
+$priority       = $input['priority']       ?? 'Low';
+$priority_badge = $input['priority_badge'] ?? 'b-gray';
+$score          = $input['score']          ?? '';
 
 if (!$incident_date || !$location || !$description)
     out(false, ['error' => 'Date, location, and description are required.'], 422);
 
-// ── generate complaint ID  (format: RES-2026-00001) ───────────────
 $db   = getDB();
 $year = date('Y');
-$countResult = $db->query("SELECT COUNT(*) AS cnt FROM complaints WHERE submitted_by IS NOT NULL AND YEAR(created_at) = $year");
-$count       = (int)$countResult->fetch_assoc()['cnt'];
-$complaint_id = 'RES-' . $year . '-' . str_pad($count + 1, 5, '0', STR_PAD_LEFT);
+$cnt  = (int)$db->query("SELECT COUNT(*) FROM complaints WHERE submitted_by IS NOT NULL")->fetch_row()[0];
+$complaint_id = 'RES-' . $year . '-' . str_pad($cnt + 1, 5, '0', STR_PAD_LEFT);
 $date_filed   = date('Y-m-d');
 
-// ── insert into existing complaints table ─────────────────────────
-// Columns: complaint_id, date_filed, description, location,
-//          incident_date, incident_time, complainant, affected,
-//          category, confidence, score, priority, priority_badge,
-//          officer, status, status_badge, barangay_id, submitted_by
 $stmt = $db->prepare('
     INSERT INTO complaints
         (complaint_id, date_filed, description, location,
@@ -57,25 +44,12 @@ $stmt = $db->prepare('
          category, confidence, score, priority, priority_badge,
          officer, status, status_badge, barangay_id, submitted_by)
     VALUES
-        (?, ?, ?, ?,
-         ?, ?, ?, ?,
-         "", 0, "", "Low", "b-gray",
-         "—", "Open", "b-gray", ?, ?)
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "—", "Open", "b-gray", ?, ?)
 ');
 
-// type string:
-// s  complaint_id
-// s  date_filed
-// s  description
-// s  location
-// s  incident_date
-// s  incident_time
-// s  complainant
-// i  affected
-// i  barangay_id
-// i  submitted_by
+// 15 ? marks: s×7, i×1, s×1, i×1, s×3, i×2
 $stmt->bind_param(
-    'sssssssiiii',
+    'sssssssisisssii',
     $complaint_id,
     $date_filed,
     $description,
@@ -84,20 +58,20 @@ $stmt->bind_param(
     $incident_time,
     $complainant,
     $affected,
+    $category,
+    $confidence,
+    $score,
+    $priority,
+    $priority_badge,
     $user['barangay_id'],
     $user['id']
 );
 
 if ($stmt->execute()) {
-    $stmt->close();
-    $db->close();
-    out(true, [
-        'complaint_no' => $complaint_id,
-        'message'      => 'Complaint submitted successfully.'
-    ]);
+    $stmt->close(); $db->close();
+    out(true, ['complaint_no' => $complaint_id]);
 } else {
     $err = $stmt->error;
-    $stmt->close();
-    $db->close();
-    out(false, ['error' => 'Could not save complaint: ' . $err], 500);
+    $stmt->close(); $db->close();
+    out(false, ['error' => 'DB error: ' . $err], 500);
 }
