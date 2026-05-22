@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BICTS – Barangay Intelligent Case Tracking System</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-deco"></div>
+  <div class="login-deco"></div>
+  <div class="login-card">
+    <div class="login-logo">Barang<span>AI</span></div>
+    <div class="login-sub">Barangay Intelligent Case Tracking System<br>Authorized personnel only</div>
+    <div class="field" style="margin-bottom:12px;">
+      <div class="label">Username / Email</div>
+      <input class="inp filled" type="text" placeholder="Enter your email">
+    </div>
+    <div class="field" style="margin-bottom:20px;">
+      <div class="label">Password</div>
+      <input class="inp filled" type="password" placeholder="Enter your password">
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);">
+        <input type="checkbox"> Remember me
+      </label>
+      <span style="font-size:12px;color:var(--blue);cursor:pointer;">Forgot password?</span>
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px;" onclick="doLogin()">Sign In →</button>
+    <div style="text-align:center;margin-top:14px;font-size:11px;color:var(--text3);">System access is restricted to authorized barangay personnel only.</div>
+  </div>
+</div>
+
+<!-- MAIN SHELL -->
+<div id="shell" style="display:none;">
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div id="sidebar-brand">
+      <div class="logo">Barang<span>AI</span></div>
+      <div class="sub">Barangay Intelligent Case Tracking System</div>
+    </div>
+    <div id="sidebar-user">
+      <div class="user-ava">JD</div>
+      <div>
+        <div class="user-name">Nicole | Airon | Darrel</div>
+        <div class="user-role">CS - 3IS2</div>
+      </div>
+    </div>
+    <div class="nav-section">Main</div>
+    <div class="nav-item active"       onclick="showScreen('dashboard',this)"><span class="nav-icon">▦</span> Dashboard</div>
+    <div class="nav-item"              onclick="showScreen('complaints',this)"><span class="nav-icon">📋</span> Complaints</div>
+    <div class="nav-item"              onclick="showScreen('priority',this)"><span class="nav-icon">⚡</span> Priority Queue</div>
+    <div class="nav-item"              onclick="showScreen('cases',this)"><span class="nav-icon">📁</span> Case Tracking</div>
+    <div class="nav-item"              onclick="showScreen('ai',this)"><span class="nav-icon">🤖</span> AI Results</div>
+    <div class="nav-section">Admin</div>
+    <div class="nav-item"              onclick="showScreen('reports',this)"><span class="nav-icon">📈</span> Reports</div>
+    <div class="nav-item"              onclick="showScreen('users',this)"><span class="nav-icon">👥</span> Users</div>
+    <div class="nav-item"              onclick="showScreen('notifs',this)"><span class="nav-icon">🔔</span> Notifications</div>
+    <div class="nav-item"              onclick="showScreen('settings',this)"><span class="nav-icon">⚙️</span> Settings</div>
+    <div id="sidebar-footer">
+      <div class="logout-btn" onclick="doLogout()">⬅ Sign Out</div>
+    </div>
+  </div>
+
+  <!-- MAIN AREA -->
+  <div id="main">
+    <div id="topbar">
+      <div id="topbar-title">Dashboard</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+        <button class="btn btn-primary btn-sm" onclick="showModal('submitModal')">+ Submit Complaint</button>
+        <div class="topbar-action" onclick="showScreen('notifs',null)">🔔</div>
+        <div class="topbar-action">👤</div>
+      </div>
+    </div>
+
+    <div id="content">
+
+<!-- ═══════════════════════════════════════════════════
+     DASHBOARD
+═══════════════════════════════════════════════════ -->
+<div id="screen-dashboard" class="screen active">
+  <div class="page-header">
+    <div class="page-title">Dashboard</div>
+    <div class="page-sub">Welcome back, Administrator. Here's today's overview.</div>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Complaints</div>
+      <div class="stat-value" id="stat-total">0</div>
+      <div class="stat-delta">No complaints yet</div>
+    </div>
+    <div class="stat-card amber">
+      <div class="stat-label">Pending</div>
+      <div class="stat-value" id="stat-pending" style="color:var(--amber)">0</div>
+      <div class="stat-delta neg">Awaiting action</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Resolved</div>
+      <div class="stat-value" id="stat-resolved" style="color:var(--green)">0</div>
+      <div class="stat-delta">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg. Response</div>
+      <div class="stat-value" id="stat-response">—</div>
+      <div class="stat-delta">No data yet</div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;">
+    <div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Recent Complaints</div>
+          <button class="btn btn-ghost btn-sm" onclick="showScreen('complaints',null)">View All →</button>
+        </div>
+        <div class="card-body" id="dashboard-recent">
+          <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <div class="empty-title">No complaints yet</div>
+            <div class="empty-desc">Submitted complaints will appear here.</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Classification Accuracy — Best Configuration (v2 / 200 per category)</div>
+        </div>
+        <div class="card-body">
+          <div id="accuracy-bars"></div>
+          <!-- Updated: SVM is the best model per actual experiment results -->
+          <div class="alert alert-info" style="margin-bottom:0;">🤖 <strong>Active model: SVM</strong> — best F1-score (95.3%) at v2 (200/cat) dataset. BiLSTM and Naive Bayes available for comparison.</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">By Category</div></div>
+        <div class="card-body">
+          <!-- Donut chart rebuilt from actual 7-category merge -->
+          <div class="donut-wrap">
+            <div class="donut" id="dashboard-donut"></div>
+            <div class="legend" id="dashboard-legend"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Critical Cases</div></div>
+        <div class="card-body" style="padding:12px;" id="critical-cases"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     COMPLAINTS
+═══════════════════════════════════════════════════ -->
+<div id="screen-complaints" class="screen">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div class="page-header" style="margin:0;">
+      <div class="page-title">All Complaints</div>
+      <div class="page-sub">0 total records</div>
+    </div>
+    <button class="btn btn-primary" onclick="showModal('submitModal')">+ Submit Complaint</button>
+  </div>
+  <div class="search-bar">
+    <span style="color:var(--text3);font-size:13px;">🔍</span>
+    <input placeholder="Search by ID, keyword, or description…" id="complaint-search" oninput="filterComplaints()">
+  </div>
+  <div class="filter-row">
+    <span style="font-size:11px;color:var(--text3);">Status:</span>
+    <div class="chip active" onclick="filterByStatus('All',this)">All</div>
+    <div class="chip" onclick="filterByStatus('Open',this)">Open</div>
+    <div class="chip" onclick="filterByStatus('In Progress',this)">In Progress</div>
+    <div class="chip" onclick="filterByStatus('Resolved',this)">Resolved</div>
+    <div class="chip" onclick="filterByStatus('Closed',this)">Closed</div>
+    <div style="margin-left:auto;display:flex;gap:8px;">
+      <!-- Updated: category filter now uses 7 validated categories -->
+      <select class="inp sel" id="cat-filter" style="font-size:11px;padding:5px 28px 5px 10px;height:30px;" onchange="filterComplaints()">
+        <option value="">Category: All</option>
+        <option>Threat &amp; Violence</option>
+        <option>Financial &amp; Fraud</option>
+        <option>Theft &amp; Property</option>
+        <option>Defamation &amp; Cyberbullying</option>
+        <option>Lost Items &amp; Missing Person</option>
+        <option>Accident &amp; Traffic</option>
+        <option>Environmental &amp; Infrastructure</option>
+      </select>
+      <select class="inp sel" id="pri-filter" style="font-size:11px;padding:5px 28px 5px 10px;height:30px;" onchange="filterComplaints()">
+        <option value="">Priority: All</option>
+        <option>Critical</option><option>High</option><option>Medium</option><option>Low</option>
+      </select>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body np">
+      <table class="tbl">
+        <thead>
+          <tr><th>ID</th><th>Date</th><th>Description</th><th>Category</th><th>Priority Score</th><th>Officer</th><th>Status</th><th></th><th></th></tr>
+        </thead>
+        <tbody id="complaints-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     COMPLAINT DETAIL
+═══════════════════════════════════════════════════ -->
+<div id="screen-complaint-detail" class="screen">
+  <div class="breadcrumb">Complaints / <b id="detail-breadcrumb">—</b></div>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+    <div>
+      <div class="page-title" id="detail-page-title">—</div>
+      <div style="display:flex;gap:6px;margin-top:6px;" id="detail-badge-row">
+        <span class="badge b-blue">—</span>
+        <span class="badge b-gray">—</span>
+        <span class="badge b-gray">—</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-secondary btn-sm" onclick="showScreen('complaints',null)">← Back</button>
+      <button class="btn btn-primary btn-sm" onclick="showModal('assignModal')">Assign Officer</button>
+      <button class="btn btn-secondary btn-sm" id="detail-resolve-btn" style="color:var(--green);border-color:var(--green);">✓ Resolve</button>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;">
+    <div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Complaint Details</div></div>
+        <div class="card-body">
+          <div class="detail-grid" style="margin-bottom:16px;">
+            <div class="detail-item"><div class="dl">Date Filed</div><div class="dv" id="detail-date-filed">—</div></div>
+            <div class="detail-item"><div class="dl">Incident Date &amp; Time</div><div class="dv" id="detail-incident-date">—</div></div>
+            <div class="detail-item"><div class="dl">Location</div><div class="dv" id="detail-location">—</div></div>
+            <div class="detail-item"><div class="dl">Affected Persons</div><div class="dv" id="detail-affected">—</div></div>
+            <div class="detail-item"><div class="dl">Complainant</div><div class="dv" id="detail-complainant">Anonymous</div></div>
+            <div class="detail-item"><div class="dl">Assigned Officer</div><div class="dv" id="detail-officer">—</div></div>
+          </div>
+          <hr class="divider">
+          <div class="dl" style="margin-bottom:8px;">Description</div>
+          <div id="detail-description" style="font-size:13px;color:var(--text);line-height:1.7;background:var(--bg);padding:13px;border-radius:var(--r);">—</div>
+        </div>
+      </div>
+      <!-- Updated: model label changed to SVM; note about TF-IDF bigrams -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">🤖 NLP Classification Result</div></div>
+        <div class="card-body">
+          <div class="nlp-box">
+            <div class="nlp-label">SVM Model — Category Scores</div>
+            <div id="nlp-conf-bars"></div>
+          </div>
+          <div style="margin-top:12px;font-size:11px;color:var(--text3);">
+            Predicted: <strong style="color:var(--blue)" id="nlp-predicted-label">—</strong>
+            · TF-IDF (1,2)-gram feature extraction · sublinear_tf=True
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Case Notes</div>
+          <button class="btn btn-ghost btn-sm">+ Add Note</button>
+        </div>
+        <div class="card-body" id="case-notes"></div>
+      </div>
+    </div>
+    <div>
+      <!-- Fuzzy AHP priority with real weights -->
+      <div class="card" style="margin-bottom:14px;">
+        <div class="card-header"><div class="card-title">⚡ Fuzzy AHP Priority</div></div>
+        <div class="card-body">
+          <div class="priority-score">
+            <div class="score-num medium" id="detail-score-num">—</div>
+            <div style="margin-top:8px;"><span class="badge b-gray" id="detail-priority-badge" style="font-size:12px;padding:4px 12px;">Pending</span></div>
+          </div>
+          <hr class="divider">
+          <div id="ahp-criteria"></div>
+          <!-- Fuzzy AHP weight legend -->
+          <div style="margin-top:12px;font-size:10px;color:var(--text3);line-height:1.7;">
+            Weights: Severity (35%) · Urgency (30%) · Frequency (20%) · Affected (15%)
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Case Timeline</div></div>
+        <div class="card-body" id="detail-timeline">
+          <div class="empty-state" style="padding:24px 0;">
+            <div class="empty-icon">📅</div>
+            <div class="empty-title">No activity yet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     PRIORITY QUEUE
+═══════════════════════════════════════════════════ -->
+<div id="screen-priority" class="screen">
+  <div class="page-header">
+    <div class="page-title">Priority Queue</div>
+    <!-- Updated: weights shown match actual Fuzzy AHP config from Chapter 1 -->
+    <div class="page-sub">Complaints ranked by Fuzzy AHP score — Severity (35%) · Urgency (30%) · Frequency (20%) · Affected (15%)</div>
+  </div>
+  <div class="card">
+    <div class="card-body np">
+      <table class="tbl">
+        <thead>
+          <tr><th>Rank</th><th>ID</th><th>Category</th><th>Priority Score</th><th>Severity</th><th>Urgency</th><th>Frequency</th><th>Affected</th><th>Officer</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody id="priority-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     CASE TRACKING KANBAN
+═══════════════════════════════════════════════════ -->
+<div id="screen-cases" class="screen">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div class="page-header" style="margin:0;">
+      <div class="page-title">Case Board</div>
+      <div class="page-sub">Live case management — move or resolve complaints directly from here</div>
+    </div>
+  </div>
+  <div class="kanban" id="kanban-board"></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     AI RESULTS — Updated with actual experiment data
+═══════════════════════════════════════════════════ -->
+<div id="screen-ai" class="screen">
+  <div class="page-header">
+    <div class="page-title">AI Classification Results</div>
+    <!-- Updated: reflects actual study — SVM best at v2 per honest evaluation -->
+    <div class="page-sub">NLP model performance · Rich Local Augmentation · Split-First Protocol · 7 merged categories · 22-sample clean test set</div>
+  </div>
+  <!-- Updated stat cards: actual values from experiment -->
+  <div class="stats-grid">
+    <div class="stat-card green">
+      <div class="stat-label">SVM Accuracy (v2)</div>
+      <div class="stat-value" style="color:var(--green)">95.45%</div>
+      <div class="stat-delta">Best performing model ★</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">SVM F1-Score (v2)</div>
+      <div class="stat-value">95.3%</div>
+      <div class="stat-delta">Weighted F1 · 22 real samples</div>
+    </div>
+    <div class="stat-card amber">
+      <div class="stat-label">BiLSTM Accuracy (v3)</div>
+      <div class="stat-value" style="color:var(--amber)">90.91%</div>
+      <div class="stat-delta">Best at 300/cat · slower train</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Naive Bayes (v1)</div>
+      <div class="stat-value">86.36%</div>
+      <div class="stat-delta">Baseline · fastest inference</div>
+    </div>
+  </div>
+
+  <!-- Dataset version comparison -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header">
+      <div class="card-title">F1-Score by Dataset Version (v1–v5) — All Three Models</div>
+      <span class="badge b-green" style="font-size:10px;">Honest evaluation + clean test set </span>
+    </div>
+    <div class="card-body np">
+      <table class="tbl" id="dataset-version-tbl">
+        <thead>
+          <tr>
+            <th>Dataset</th>
+            <th>Train Samples</th>
+            <th>Naive Bayes F1</th>
+            <th>SVM F1</th>
+            <th>BiLSTM F1</th>
+            <th>Best Model</th>
+          </tr>
+        </thead>
+        <tbody id="dataset-version-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="g2">
+    <!-- Updated: model comparison uses actual experiment numbers -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Model Comparison — v2 (200/cat) · Best Overall</div>
+      </div>
+      <div class="card-body np">
+        <table class="tbl">
+          <thead>
+            <!-- Updated: SVM is starred as best model -->
+            <tr><th>Metric</th><th>Naive Bayes</th><th style="background:var(--sky-light);color:var(--blue)">SVM ★</th><th>BiLSTM</th></tr>
+          </thead>
+          <tbody id="model-comparison-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- Updated: per-category F1 from SVM v2 actual classification report -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">Per-Category Report — SVM · v2 (200/cat)</div></div>
+      <div class="card-body np">
+        <table class="tbl">
+          <thead><tr><th>Category</th><th>Precision</th><th>Recall</th><th>F1</th><th>Support</th></tr></thead>
+          <tbody id="f1-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- NLP pipeline — updated to reflect actual preprocessing + augmentation -->
+  <div class="card">
+    <div class="card-header"><div class="card-title">NLP Preprocessing &amp; Augmentation Pipeline</div></div>
+    <div class="card-body">
+      <div id="nlp-pipeline" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;"></div>
+      <hr class="divider" style="margin:12px 0;">
+      <div style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px;">Rich Local Augmentation Techniques (no external API)</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;" id="aug-tags"></div>
+      <div style="font-size:11px;color:var(--text3);">
+        Filipino/Taglish stop words removed:
+        <span class="tag">ang</span><span class="tag">ng</span><span class="tag">sa</span><span class="tag">na</span><span class="tag">at</span><span class="tag">mga</span><span class="tag">ito</span><span class="tag">ay</span><span class="tag">si</span><span class="tag">ni</span><span class="tag">ko</span><span class="tag">mo</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     REPORTS
+═══════════════════════════════════════════════════ -->
+<div id="screen-reports" class="screen">
+  <div class="page-header">
+    <div class="page-title">Reports</div>
+    <div class="page-sub">Generate and export system performance reports</div>
+  </div>
+  <div class="g2">
+    <div id="report-list"></div>
+    <div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Weekly Complaint Volume</div></div>
+        <div class="card-body">
+          <div class="bars" style="height:120px;" id="weekly-bars"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">ISO 25010 Evaluation Summary</div></div>
+        <div class="card-body" id="iso-eval"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- USERS -->
+<div id="screen-users" class="screen">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div class="page-header" style="margin:0;"><div class="page-title">User Management</div></div>
+    <button class="btn btn-primary">+ Add User</button>
+  </div>
+  <div class="card">
+    <div class="card-body np">
+      <table class="tbl">
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th></th></tr></thead>
+        <tbody id="users-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- NOTIFICATIONS -->
+<div id="screen-notifs" class="screen">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div class="page-header" style="margin:0;"><div class="page-title">Notifications</div></div>
+    <button class="btn btn-ghost btn-sm">Mark all as read</button>
+  </div>
+  <div class="card">
+    <div class="card-body" id="notifs-list"></div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div id="screen-settings" class="screen">
+  <div class="page-header"><div class="page-title">System Settings</div></div>
+  <div class="tabs">
+    <div class="tab active">General</div>
+    <div class="tab">Categories</div>
+    <div class="tab">AI Model</div>
+    <div class="tab">Audit Log</div>
+  </div>
+  <div style="max-width:640px;">
+    <div class="card">
+      <div class="card-header"><div class="card-title">General Configuration</div></div>
+      <div class="card-body">
+        <div id="settings-fields"></div>
+        <hr class="divider">
+        <div id="settings-toggles"></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+          <button class="btn btn-primary">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /shell -->
+
+<!-- ═══════════════════════════════════════════════════
+     SUBMIT COMPLAINT MODAL
+═══════════════════════════════════════════════════ -->
+<div id="submitModal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Submit New Complaint</div>
+      <div class="modal-close" onclick="closeModal('submitModal')">✕</div>
+    </div>
+    <div class="modal-body">
+      <div class="wizard-steps">
+        <div class="wizard-step">
+          <div class="wizard-step-n cur" id="ws-n-1">1</div>
+          <div class="wizard-step-label cur" id="ws-l-1">Basic Info</div>
+        </div>
+        <div class="wizard-step-line"></div>
+        <div class="wizard-step">
+          <div class="wizard-step-n todo" id="ws-n-2">2</div>
+          <div class="wizard-step-label todo" id="ws-l-2">Details</div>
+        </div>
+        <div class="wizard-step-line"></div>
+        <div class="wizard-step">
+          <div class="wizard-step-n todo" id="ws-n-3">3</div>
+          <div class="wizard-step-label todo" id="ws-l-3">AI Result</div>
+        </div>
+        <div class="wizard-step-line"></div>
+        <div class="wizard-step">
+          <div class="wizard-step-n todo" id="ws-n-4">4</div>
+          <div class="wizard-step-label todo" id="ws-l-4">Confirm</div>
+        </div>
+      </div>
+
+      <!-- Step 1: Basic info -->
+      <div class="wizard-panel active" id="wp-1">
+        <div class="form-row">
+          <div class="field">
+            <div class="label">Date of Incident <span>*</span></div>
+            <input class="inp" id="w-date" type="date">
+          </div>
+          <div class="field">
+            <div class="label">Time of Incident</div>
+            <input class="inp" id="w-time" type="time">
+          </div>
+        </div>
+        <div class="form-row full">
+          <div class="field">
+            <div class="label">Location / Address <span>*</span></div>
+            <input class="inp" id="w-location" placeholder="e.g. Near Purok 3, beside basketball court">
+          </div>
+        </div>
+        <div class="form-row full" style="margin-bottom:0;">
+          <div class="field">
+            <div class="label">Complaint Description <span>*</span></div>
+            <!-- Updated: hint text lists actual 7 categories -->
+            <textarea class="inp ta" id="w-description" placeholder="Describe what happened. The SVM classifier will automatically categorize this into: Threat & Violence, Financial & Fraud, Theft & Property, Defamation & Cyberbullying, Lost Items & Missing Person, Accident & Traffic, or Environmental & Infrastructure."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Details -->
+      <div class="wizard-panel" id="wp-2">
+        <div class="form-row">
+          <div class="field">
+            <div class="label">Complainant Name</div>
+            <input class="inp" id="w-complainant" placeholder="Leave blank to file anonymously">
+          </div>
+          <div class="field">
+            <div class="label">No. of Affected Individuals</div>
+            <input class="inp" id="w-affected" type="number" min="1" placeholder="e.g. 5">
+          </div>
+        </div>
+        <div class="alert alert-info">🔒 <strong>Privacy notice:</strong> Complainant identity is confidential and will only be disclosed with consent. Anonymous filing is allowed.</div>
+      </div>
+
+      <!-- Step 3: AI Classification result -->
+      <div class="wizard-panel" id="wp-3">
+        <!-- Updated: says SVM, not BiLSTM -->
+        <div class="ai-result-box">
+          <div class="ai-result-icon">🤖</div>
+          <div class="ai-result-category" id="ai-cat">Classifying…</div>
+          <div class="ai-result-conf" id="ai-conf">Processing with SVM model</div>
+        </div>
+        <div class="nlp-box">
+          <div class="nlp-label">Category Confidence Scores</div>
+          <div id="ai-conf-bars">
+            <div style="text-align:center;padding:12px;font-size:12px;color:var(--text3);">Loading…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4: Confirm -->
+      <div class="wizard-panel" id="wp-4">
+        <div class="alert alert-info" style="margin-bottom:14px;">📋 Please review the complaint details before submitting.</div>
+        <div id="confirm-rows"></div>
+      </div>
+
+      <!-- Step 5: Success -->
+      <div class="wizard-panel" id="wp-success">
+        <div class="success-panel">
+          <div class="success-icon">✓</div>
+          <div class="success-title">Complaint Submitted!</div>
+          <div class="success-sub">Your complaint has been recorded and classified by the SVM model.<br>It has been added to the priority queue for officer assignment.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer" id="wizard-footer">
+      <button class="btn btn-secondary" id="wizard-back"   onclick="wizardBack()"             style="display:none;">← Back</button>
+      <button class="btn btn-secondary" id="wizard-cancel" onclick="closeModal('submitModal')">Cancel</button>
+      <button class="btn btn-primary"   id="wizard-next"   onclick="wizardNext()">Next →</button>
+      <button class="btn btn-primary"   id="wizard-submit" onclick="wizardSubmit()"            style="display:none;">✓ Submit Complaint</button>
+      <button class="btn btn-primary"   id="wizard-done"   onclick="closeModal('submitModal')" style="display:none;">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ASSIGN OFFICER -->
+<div id="assignModal" class="modal-overlay">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">Assign Officer</div>
+      <div class="modal-close" onclick="closeModal('assignModal')">✕</div>
+    </div>
+    <div class="modal-body">
+      <div class="field" style="margin-bottom:14px;">
+        <div class="label">Select Officer</div>
+        <select class="inp sel">
+          <option>-- Select Officer --</option>
+          <option>Maria Santos (0 active cases)</option>
+          <option>Juan Cruz (0 active cases)</option>
+          <option>Ricardo Reyes (0 active cases)</option>
+        </select>
+      </div>
+      <div class="field">
+        <div class="label">Target Resolution Date</div>
+        <input class="inp" type="date">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('assignModal')">Cancel</button>
+      <button class="btn btn-primary">Assign Officer</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESOLVE -->
+<div id="resolveModal" class="modal-overlay">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <div class="modal-title" style="color:var(--green)">✓ Resolve Complaint</div>
+      <div class="modal-close" onclick="closeModal('resolveModal')">✕</div>
+    </div>
+    <div class="modal-body">
+      <div class="field" style="margin-bottom:14px;">
+        <div class="label">Resolution / Action Taken <span>*</span></div>
+        <textarea class="inp ta" placeholder="Describe the resolution or action taken…"></textarea>
+      </div>
+      <div class="field">
+        <div class="label">Resolution Date</div>
+        <input class="inp" type="date">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('resolveModal')">Cancel</button>
+      <button class="btn" style="background:var(--green);color:#fff;">✓ Mark as Resolved</button>
+    </div>
+  </div>
+</div>
+
+<!-- Load order matters: data → classifier → dataset → render → app -->
+<script src="js/data.js"></script>
+<script src="js/classifier.js"></script>
+<script src="js/dataset.js"></script>
+<script src="js/render.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
