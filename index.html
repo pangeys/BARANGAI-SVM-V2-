@@ -105,7 +105,6 @@
         </div>
         <div class="card-body">
           <div id="accuracy-bars"></div>
-          <!-- Updated: SVM is the best model per actual experiment results -->
           <div class="alert alert-info" style="margin-bottom:0;">🤖 <strong>Active model: SVM</strong> — best F1-score (95.3%) at v2 (200/cat) dataset. BiLSTM and Naive Bayes available for comparison.</div>
         </div>
       </div>
@@ -114,7 +113,6 @@
       <div class="card">
         <div class="card-header"><div class="card-title">By Category</div></div>
         <div class="card-body">
-          <!-- Donut chart rebuilt from actual 7-category merge -->
           <div class="donut-wrap">
             <div class="donut" id="dashboard-donut"></div>
             <div class="legend" id="dashboard-legend"></div>
@@ -152,7 +150,6 @@
     <div class="chip" onclick="filterByStatus('Resolved',this)">Resolved</div>
     <div class="chip" onclick="filterByStatus('Closed',this)">Closed</div>
     <div style="margin-left:auto;display:flex;gap:8px;">
-      <!-- Updated: category filter now uses 7 validated categories -->
       <select class="inp sel" id="cat-filter" style="font-size:11px;padding:5px 28px 5px 10px;height:30px;" onchange="filterComplaints()">
         <option value="">Category: All</option>
         <option>Threat &amp; Violence</option>
@@ -197,7 +194,8 @@
     </div>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-secondary btn-sm" onclick="showScreen('complaints',null)">← Back</button>
-      <button class="btn btn-primary btn-sm" onclick="showModal('assignModal')">Assign Officer</button>
+      <!-- CHANGED: now calls openAssignModal() with the current complaint ID -->
+      <button class="btn btn-primary btn-sm" onclick="openAssignModal(_currentDetailComplaintId)">Assign Officer</button>
       <button class="btn btn-secondary btn-sm" id="detail-resolve-btn" style="color:var(--green);border-color:var(--green);">✓ Resolve</button>
     </div>
   </div>
@@ -219,7 +217,6 @@
           <div id="detail-description" style="font-size:13px;color:var(--text);line-height:1.7;background:var(--bg);padding:13px;border-radius:var(--r);">—</div>
         </div>
       </div>
-      <!-- Updated: model label changed to SVM; note about TF-IDF bigrams -->
       <div class="card">
         <div class="card-header"><div class="card-title">🤖 NLP Classification Result</div></div>
         <div class="card-body">
@@ -234,31 +231,26 @@
         </div>
       </div>
       <div class="card">
-  <div class="card-header">
-    <div class="card-title">Case Notes</div>
-    <!-- Button must call showNoteForm() -->
-    <button class="btn btn-ghost btn-sm" onclick="showNoteForm()">+ Add Note</button>
-  </div>
-
-  <!-- Notes appear here -->
-  <div class="card-body" id="case-notes"></div>
-
-  <!-- Input form — hidden until button is clicked -->
-  <div id="note-form" style="display:none; padding: 0 16px 16px;">
-    <div style="border-top: 1px solid var(--border); padding-top: 12px;">
-      <textarea
-        class="inp ta"
-        id="note-content"
-        placeholder="Type your note here…"
-        style="min-height: 80px; margin-bottom: 8px;"
-      ></textarea>
-        <div style="display:flex; gap:8px; justify-content:flex-end;">
-          <button class="btn btn-secondary btn-sm" onclick="hideNoteForm()">Cancel</button>
-          <button class="btn btn-primary btn-sm" id="note-submit-btn" onclick="submitNote()">Save Note</button>
+        <div class="card-header">
+          <div class="card-title">Case Notes</div>
+          <button class="btn btn-ghost btn-sm" onclick="showNoteForm()">+ Add Note</button>
+        </div>
+        <div class="card-body" id="case-notes"></div>
+        <div id="note-form" style="display:none; padding: 0 16px 16px;">
+          <div style="border-top: 1px solid var(--border); padding-top: 12px;">
+            <textarea
+              class="inp ta"
+              id="note-content"
+              placeholder="Type your note here…"
+              style="min-height: 80px; margin-bottom: 8px;"
+            ></textarea>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+              <button class="btn btn-secondary btn-sm" onclick="hideNoteForm()">Cancel</button>
+              <button class="btn btn-primary btn-sm" id="note-submit-btn" onclick="submitNote()">Save Note</button>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
       <div class="card">
         <div class="card-header"><div class="card-title">Case Timeline</div></div>
         <div class="card-body" id="detail-timeline">
@@ -278,7 +270,6 @@
 <div id="screen-priority" class="screen">
   <div class="page-header">
     <div class="page-title">Priority Queue</div>
-    <!-- Updated: weights shown match actual Fuzzy AHP config from Chapter 1 -->
     <div class="page-sub">Complaints ranked by Fuzzy AHP score — Severity (35%) · Urgency (30%) · Frequency (20%) · Affected (15%)</div>
   </div>
   <div class="card">
@@ -307,15 +298,13 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════════
-     AI RESULTS — Updated with actual experiment data
+     AI RESULTS
 ═══════════════════════════════════════════════════ -->
 <div id="screen-ai" class="screen">
   <div class="page-header">
     <div class="page-title">AI Classification Results</div>
-    <!-- Updated: reflects actual study — SVM best at v2 per honest evaluation -->
     <div class="page-sub">NLP model performance · Rich Local Augmentation · Split-First Protocol · 7 merged categories · 22-sample clean test set</div>
   </div>
-  <!-- Updated stat cards: actual values from experiment -->
   <div class="stats-grid">
     <div class="stat-card green">
       <div class="stat-label">SVM Accuracy (v2)</div>
@@ -338,12 +327,10 @@
       <div class="stat-delta">Baseline · fastest inference</div>
     </div>
   </div>
-
-  <!-- Dataset version comparison -->
   <div class="card" style="margin-bottom:16px;">
     <div class="card-header">
       <div class="card-title">F1-Score by Dataset Version (v1–v5) — All Three Models</div>
-      <span class="badge b-green" style="font-size:10px;">Honest evaluation + clean test set </span>
+      <span class="badge b-green" style="font-size:10px;">Honest evaluation + clean test set</span>
     </div>
     <div class="card-body np">
       <table class="tbl" id="dataset-version-tbl">
@@ -361,9 +348,7 @@
       </table>
     </div>
   </div>
-
   <div class="g2">
-    <!-- Updated: model comparison uses actual experiment numbers -->
     <div class="card">
       <div class="card-header">
         <div class="card-title">Model Comparison — v2 (200/cat) · Best Overall</div>
@@ -371,14 +356,12 @@
       <div class="card-body np">
         <table class="tbl">
           <thead>
-            <!-- Updated: SVM is starred as best model -->
             <tr><th>Metric</th><th>Naive Bayes</th><th style="background:var(--sky-light);color:var(--blue)">SVM ★</th><th>BiLSTM</th></tr>
           </thead>
           <tbody id="model-comparison-tbody"></tbody>
         </table>
       </div>
     </div>
-    <!-- Updated: per-category F1 from SVM v2 actual classification report -->
     <div class="card">
       <div class="card-header"><div class="card-title">Per-Category Report — SVM · v2 (200/cat)</div></div>
       <div class="card-body np">
@@ -389,8 +372,6 @@
       </div>
     </div>
   </div>
-
-  <!-- NLP pipeline — updated to reflect actual preprocessing + augmentation -->
   <div class="card">
     <div class="card-header"><div class="card-title">NLP Preprocessing &amp; Augmentation Pipeline</div></div>
     <div class="card-body">
@@ -433,14 +414,11 @@
     <div class="page-header" style="margin:0;"><div class="page-title">User Management</div></div>
     <button class="btn btn-primary" onclick="openAddUser()">+ Add User</button>
   </div>
-
   <div class="tabs" id="users-tabs" style="margin-bottom:14px;">
     <div class="tab active" onclick="switchUsersTab('users',this)">Users &amp; Roles</div>
     <div class="tab"        onclick="switchUsersTab('audit',this)">Activity Log</div>
     <div class="tab"        onclick="switchUsersTab('stats',this)">Staff Stats</div>
   </div>
-
-  <!-- Panel 1: users -->
   <div id="users-panel">
     <div class="card"><div class="card-body np">
       <table class="tbl">
@@ -449,8 +427,6 @@
       </table>
     </div></div>
   </div>
-
-  <!-- Panel 2: activity log -->
   <div id="audit-panel" style="display:none;">
     <div class="card"><div class="card-body np">
       <table class="tbl">
@@ -459,8 +435,6 @@
       </table>
     </div></div>
   </div>
-
-  <!-- Panel 3: staff stats -->
   <div id="stats-panel" style="display:none;">
     <div class="card"><div class="card-body np">
       <table class="tbl">
@@ -482,16 +456,23 @@
   </div>
 </div>
 
-<!-- SETTINGS -->
+<!-- ═══════════════════════════════════════════════════
+     SETTINGS  ← UPDATED: added Officers tab + panel
+═══════════════════════════════════════════════════ -->
 <div id="screen-settings" class="screen">
   <div class="page-header"><div class="page-title">System Settings</div></div>
-  <div class="tabs">
-    <div class="tab active">General</div>
-    <div class="tab">Categories</div>
-    <div class="tab">AI Model</div>
-    <div class="tab">Audit Log</div>
+
+  <!-- Tabs — onclick added to each; Officers tab is new -->
+  <div class="tabs" id="settings-tabs">
+    <div class="tab active"  onclick="switchSettingsTab('general',this)">General</div>
+    <div class="tab"         onclick="switchSettingsTab('categories',this)">Categories</div>
+    <div class="tab"         onclick="switchSettingsTab('ai',this)">AI Model</div>
+    <div class="tab"         onclick="switchSettingsTab('audit',this)">Audit Log</div>
+    <div class="tab"         onclick="switchSettingsTab('officers',this)">👮 Officers</div>
   </div>
-  <div style="max-width:640px;">
+
+  <!-- General / Categories / AI / Audit panel (existing content lives here) -->
+  <div id="settings-main-panel" style="max-width:640px;">
     <div class="card">
       <div class="card-header"><div class="card-title">General Configuration</div></div>
       <div class="card-body">
@@ -504,7 +485,67 @@
       </div>
     </div>
   </div>
-</div>
+
+  <!-- ══ Officers Management Panel (NEW) ══ -->
+  <div id="settings-panel-officers" style="display:none;">
+
+    <!-- Header -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--text);">Officer Management</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:3px;">
+          Manage officers who can be assigned to handle barangay complaints
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="openAddOfficer()">+ Add Officer</button>
+    </div>
+
+    <!-- Stats row -->
+    <div style="display:flex;gap:12px;margin-bottom:16px;">
+      <div class="stat-card" style="flex:1;padding:14px 16px;">
+        <div class="stat-label">Total Officers</div>
+        <div class="stat-value" id="officer-stat-total" style="font-size:22px;">0</div>
+      </div>
+      <div class="stat-card green" style="flex:1;padding:14px 16px;">
+        <div class="stat-label">Active</div>
+        <div class="stat-value" id="officer-stat-active" style="font-size:22px;color:var(--green);">0</div>
+      </div>
+      <div class="stat-card amber" style="flex:1;padding:14px 16px;">
+        <div class="stat-label">Inactive</div>
+        <div class="stat-value" id="officer-stat-inactive" style="font-size:22px;color:var(--amber);">0</div>
+      </div>
+    </div>
+
+    <!-- Officers table -->
+    <div class="card">
+      <div class="card-body np">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Rank / Position</th>
+              <th>Contact</th>
+              <th>Email</th>
+              <th>Status</th>
+              <th style="width:160px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="officers-tbody">
+            <tr>
+              <td colspan="6" style="text-align:center;padding:48px;color:var(--text3);">
+                <div style="font-size:28px;margin-bottom:8px;">👮</div>
+                <div style="font-weight:600;margin-bottom:4px;">No officers yet</div>
+                <div style="font-size:11px;">Click <strong>+ Add Officer</strong> to get started.</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /settings-panel-officers -->
+
+</div><!-- /screen-settings -->
 
     </div><!-- /content -->
   </div><!-- /main -->
@@ -542,7 +583,7 @@
         </div>
       </div>
 
-      <!-- Step 1: Basic info -->
+      <!-- Step 1 -->
       <div class="wizard-panel active" id="wp-1">
         <div class="form-row">
           <div class="field">
@@ -563,13 +604,12 @@
         <div class="form-row full" style="margin-bottom:0;">
           <div class="field">
             <div class="label">Complaint Description <span>*</span></div>
-            <!-- Updated: hint text lists actual 7 categories -->
-            <textarea class="inp ta" id="w-description" placeholder="Describe what happened. The SVM classifier will automatically categorize this into: Threat & Violence, Financial & Fraud, Theft & Property, Defamation & Cyberbullying, Lost Items & Missing Person, Accident & Traffic, or Environmental & Infrastructure."></textarea>
+            <textarea class="inp ta" id="w-description" placeholder="Describe what happened. The SVM classifier will automatically categorize this into: Threat &amp; Violence, Financial &amp; Fraud, Theft &amp; Property, Defamation &amp; Cyberbullying, Lost Items &amp; Missing Person, Accident &amp; Traffic, or Environmental &amp; Infrastructure."></textarea>
           </div>
         </div>
       </div>
 
-      <!-- Step 2: Details -->
+      <!-- Step 2 -->
       <div class="wizard-panel" id="wp-2">
         <div class="form-row">
           <div class="field">
@@ -584,9 +624,8 @@
         <div class="alert alert-info">🔒 <strong>Privacy notice:</strong> Complainant identity is confidential and will only be disclosed with consent. Anonymous filing is allowed.</div>
       </div>
 
-      <!-- Step 3: AI Classification result -->
+      <!-- Step 3 -->
       <div class="wizard-panel" id="wp-3">
-        <!-- Updated: says SVM, not BiLSTM -->
         <div class="ai-result-box">
           <div class="ai-result-icon">🤖</div>
           <div class="ai-result-category" id="ai-cat">Classifying…</div>
@@ -600,7 +639,7 @@
         </div>
       </div>
 
-      <!-- Step 4: Confirm -->
+      <!-- Step 4 -->
       <div class="wizard-panel" id="wp-4">
         <div class="alert alert-info" style="margin-bottom:14px;">📋 Please review the complaint details before submitting.</div>
         <div id="confirm-rows"></div>
@@ -626,31 +665,107 @@
   </div>
 </div>
 
-<!-- ASSIGN OFFICER -->
+<!-- ═══════════════════════════════════════════════════
+     ASSIGN OFFICER MODAL  ← UPDATED: dynamic, DB-backed
+═══════════════════════════════════════════════════ -->
 <div id="assignModal" class="modal-overlay">
-  <div class="modal" style="max-width:420px;">
+  <div class="modal" style="max-width:440px;">
     <div class="modal-header">
       <div class="modal-title">Assign Officer</div>
       <div class="modal-close" onclick="closeModal('assignModal')">✕</div>
     </div>
     <div class="modal-body">
+
+      <!-- Error / info message -->
+      <div id="assign-msg" style="font-size:12px;min-height:16px;margin-bottom:6px;"></div>
+
+      <!-- Complaint context badges (filled dynamically) -->
+      <div id="assign-complaint-ctx" style="margin-bottom:14px;display:flex;gap:6px;flex-wrap:wrap;min-height:22px;"></div>
+
+      <!-- Officer dropdown — populated dynamically by openAssignModal() -->
       <div class="field" style="margin-bottom:14px;">
-        <div class="label">Select Officer</div>
-        <select class="inp sel">
-          <option>-- Select Officer --</option>
-          <option>Maria Santos (0 active cases)</option>
-          <option>Juan Cruz (0 active cases)</option>
-          <option>Ricardo Reyes (0 active cases)</option>
+        <div class="label">Select Officer <span>*</span></div>
+        <select class="inp sel" id="assign-officer-select">
+          <option value="">-- Select Officer --</option>
         </select>
       </div>
-      <div class="field">
+
+      <!-- Optional target date -->
+      <div class="field" style="margin-bottom:14px;">
         <div class="label">Target Resolution Date</div>
-        <input class="inp" type="date">
+        <input class="inp" id="assign-target-date" type="date">
       </div>
+
+      <div class="alert alert-info" style="font-size:11px;margin-bottom:0;">
+        💡 Only <strong>Active</strong> officers are listed. Manage officers under
+        <a href="#"
+           onclick="closeModal('assignModal');showScreen('settings',document.querySelector('.nav-item[onclick*=settings]'));switchSettingsTab('officers',null);"
+           style="color:var(--blue);font-weight:600;text-decoration:none;">
+          Settings → Officers
+        </a>.
+      </div>
+
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('assignModal')">Cancel</button>
-      <button class="btn btn-primary">Assign Officer</button>
+      <button class="btn btn-primary" id="assign-submit-btn" onclick="submitAssignOfficer()">Assign Officer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     OFFICER ADD / EDIT MODAL  ← NEW
+═══════════════════════════════════════════════════ -->
+<div id="officerModal" class="modal-overlay">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title" id="officer-modal-title">Add Officer</div>
+      <div class="modal-close" onclick="closeModal('officerModal')">✕</div>
+    </div>
+    <div class="modal-body">
+
+      <!-- Validation message -->
+      <div id="om-msg" style="font-size:12px;color:var(--red,#dc2626);margin-bottom:8px;min-height:16px;"></div>
+
+      <!-- Full name -->
+      <div class="form-row full">
+        <div class="field">
+          <div class="label">Full Name <span>*</span></div>
+          <input class="inp" id="om-name" placeholder="e.g. Juan Dela Cruz">
+        </div>
+      </div>
+
+      <!-- Rank + Contact -->
+      <div class="form-row">
+        <div class="field">
+          <div class="label">Rank / Position</div>
+          <input class="inp" id="om-rank" placeholder="e.g. Tanod Chief">
+        </div>
+        <div class="field">
+          <div class="label">Contact Number</div>
+          <input class="inp" id="om-contact" type="tel" placeholder="e.g. 09XXXXXXXXX">
+        </div>
+      </div>
+
+      <!-- Email + Status -->
+      <div class="form-row">
+        <div class="field">
+          <div class="label">Email Address</div>
+          <input class="inp" id="om-email" type="email" placeholder="optional">
+        </div>
+        <div class="field">
+          <div class="label">Status</div>
+          <select class="inp sel" id="om-status">
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('officerModal')">Cancel</button>
+      <button class="btn btn-primary" id="om-submit-btn" onclick="submitOfficer()">Save Officer</button>
     </div>
   </div>
 </div>

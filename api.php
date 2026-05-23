@@ -3,21 +3,19 @@ error_reporting(0);
 ini_set('display_errors', 0);
 
 /* ═══════════════════════════════════════════════════════
-   BICTS — api.php  (SECURED + NOTES-COMPLETE)
+   BICTS — api.php  (OFFICER MANAGEMENT UPDATE)
    REST backend for complaints, notifications, ID counter,
-   and case notes.
+   case notes, and officer management.
 
-   Notes-feature changes from previous version:
-     • case_notes table is now the canonical store (no column).
-     • GET  ?type=notes&complaint_id=X  → list notes (unchanged)
-     • POST action=add_note             → create note  (unchanged)
-     • POST action=edit_note            → update note  (unchanged — was missing frontend)
-     • DELETE action=delete_note        → delete note  (BUG FIX: was POST, now DELETE
-                                          to match what app.js sends)
-     • Every note write/delete is also logged to activity_log.
+   Officer-feature changes from previous version:
+     • GET  ?type=init        → now also returns officers[] and officer_id per complaint
+     • GET  ?type=officers    → list all officers for the barangay
+     • POST action=add_officer    → create a new officer
+     • POST action=edit_officer   → update officer info
+     • DELETE action=delete_officer → delete officer + clear from complaints
+     • PUT  action=assign_officer → assign an officer to a complaint (officer + officer_id)
 
-   Security: all user input goes through prepared statements.
-   No string interpolation of untrusted values anywhere.
+   All new endpoints are barangay-scoped and use prepared statements.
 ═══════════════════════════════════════════════════════ */
 
 if (session_status() === PHP_SESSION_NONE) session_start();
@@ -79,11 +77,14 @@ $action = $body['action'] ?? '';
 
 /* ════════════════════════════════════════════════════
    GET api.php?type=init
-   Returns only THIS admin's barangay complaints.
+   Returns this barangay's complaints, notifications,
+   next ID counter, AND officers list.
+   CHANGED: added officer_id to each complaint row;
+            added officers[] to response.
 ════════════════════════════════════════════════════ */
 if ($method === 'GET' && $type === 'init') {
 
-    // complaints filtered by barangay
+    /* ── Complaints ── */
     $complaints = [];
     if ($barangay_id > 0) {
         $stmt = $conn->prepare("SELECT * FROM complaints WHERE barangay_id = ? ORDER BY created_at DESC");
@@ -111,6 +112,7 @@ if ($method === 'GET' && $type === 'init') {
             'priority'    => $row['priority'],
             'pb'          => $row['priority_badge'],
             'officer'     => $row['officer'],
+            'officer_id'  => intval($row['officer_id'] ?? 0),   // ← NEW
             'status'      => $row['status'],
             'sb'          => $row['status_badge'],
             'resolvedAt'  => $row['resolved_at'],
@@ -118,10 +120,14 @@ if ($method === 'GET' && $type === 'init') {
         ];
     }
 
-    // notifications filtered by barangay
+    /* ── Notifications ── */
     $notifs = [];
     if ($barangay_id > 0) {
-        $stmt = $conn->prepare("SELECT * FROM notifications WHERE barangay_id = ? OR barangay_id IS NULL ORDER BY created_at DESC");
+        $stmt = $conn->prepare(
+            "SELECT * FROM notifications
+             WHERE barangay_id = ? OR barangay_id IS NULL
+             ORDER BY created_at DESC"
+        );
         $stmt->bind_param('i', $barangay_id);
         $stmt->execute();
         $r2 = $stmt->get_result();
@@ -138,14 +144,34 @@ if ($method === 'GET' && $type === 'init') {
         ];
     }
 
-    // next complaint ID
+    /* ── ID counter ── */
     $r3     = $conn->query("SELECT next_id FROM id_counter WHERE id = 1");
     $nextId = intval($r3->fetch_assoc()['next_id'] ?? 1);
+
+    /* ── Officers (NEW) ── */
+    $officersList = [];
+    if ($barangay_id > 0) {
+        $stmt = $conn->prepare(
+            "SELECT id, name, `rank`, contact, email, status, barangay_id
+             FROM officers WHERE barangay_id = ? ORDER BY name ASC"
+        );
+        $stmt->bind_param('i', $barangay_id);
+        $stmt->execute();
+        $ro = $stmt->get_result();
+        $stmt->close();
+    } else {
+        $ro = $conn->query(
+            "SELECT id, name, `rank`, contact, email, status, barangay_id
+             FROM officers ORDER BY name ASC"
+        );
+    }
+    while ($row = $ro->fetch_assoc()) $officersList[] = $row;
 
     respond([
         'complaints'    => $complaints,
         'notifications' => $notifs,
         'nextId'        => $nextId,
+        'officers'      => $officersList,   // ← NEW
     ]);
 }
 
@@ -316,7 +342,140 @@ if ($method === 'DELETE' && $action === 'delete_note') {
 
 
 /* ════════════════════════════════════════════════════
-   POST action=add_complaint  (tags with admin's barangay)
+   POST action=add_officer   (NEW)
+════════════════════════════════════════════════════ */
+if ($method === 'POST' && $action === 'add_officer') {
+    $name    = trim((string)($body['name']    ?? ''));
+    $rank    = trim((string)($body['rank']    ?? ''));
+    $contact = trim((string)($body['contact'] ?? ''));
+    $email   = trim((string)($body['email']   ?? ''));
+    $status  = in_array(($body['status'] ?? ''), ['Active', 'Inactive'])
+               ? $body['status'] : 'Active';
+    $bid     = $barangay_id > 0 ? $barangay_id : null;
+
+    if ($name === '') respond(['success' => false, 'error' => 'Officer name is required'], 400);
+
+    $stmt = $conn->prepare(
+        "INSERT INTO officers (name, `rank`, contact, email, status, barangay_id)
+         VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    $stmt->bind_param('sssssi', $name, $rank, $contact, $email, $status, $bid);
+    $ok    = $stmt->execute();
+    $newId = $conn->insert_id;
+    $stmt->close();
+
+    if ($ok) {
+        logActivity($conn, $userId, $userName, $barangay_id,
+            'officer_added', "Officer '$name' added (ID: $newId)");
+    }
+    respond(['success' => (bool)$ok, 'id' => $newId]);
+}
+
+
+/* ════════════════════════════════════════════════════
+   POST action=edit_officer   (NEW)
+════════════════════════════════════════════════════ */
+if ($method === 'POST' && $action === 'edit_officer') {
+    $id      = (int)($body['id']      ?? 0);
+    $name    = trim((string)($body['name']    ?? ''));
+    $rank    = trim((string)($body['rank']    ?? ''));
+    $contact = trim((string)($body['contact'] ?? ''));
+    $email   = trim((string)($body['email']   ?? ''));
+    $status  = in_array(($body['status'] ?? ''), ['Active', 'Inactive'])
+               ? $body['status'] : 'Active';
+
+    if ($id === 0 || $name === '') {
+        respond(['success' => false, 'error' => 'id and name are required'], 400);
+    }
+
+    if ($barangay_id > 0) {
+        $stmt = $conn->prepare(
+            "UPDATE officers
+                SET name = ?, `rank` = ?, contact = ?, email = ?, status = ?
+              WHERE id = ? AND barangay_id = ?"
+        );
+        $stmt->bind_param('sssssii', $name, $rank, $contact, $email, $status, $id, $barangay_id);
+    } else {
+        $stmt = $conn->prepare(
+            "UPDATE officers SET name = ?, `rank` = ?, contact = ?, email = ?, status = ?
+             WHERE id = ?"
+        );
+        $stmt->bind_param('sssssi', $name, $rank, $contact, $email, $status, $id);
+    }
+    $ok       = $stmt->execute();
+    $affected = $stmt->affected_rows;
+    $stmt->close();
+
+    if ($ok) {
+        /* Also sync the display name in any complaints currently assigned to this officer */
+        if ($barangay_id > 0) {
+            $s2 = $conn->prepare(
+                "UPDATE complaints SET officer = ?
+                 WHERE officer_id = ? AND barangay_id = ?"
+            );
+            $s2->bind_param('sii', $name, $id, $barangay_id);
+        } else {
+            $s2 = $conn->prepare("UPDATE complaints SET officer = ? WHERE officer_id = ?");
+            $s2->bind_param('si', $name, $id);
+        }
+        $s2->execute();
+        $s2->close();
+
+        logActivity($conn, $userId, $userName, $barangay_id,
+            'officer_edited', "Officer ID $id updated to '$name'");
+    }
+    /* affected_rows is 0 when no field values changed — still a success */
+    respond(['success' => (bool)$ok]);
+}
+
+
+/* ════════════════════════════════════════════════════
+   DELETE action=delete_officer   (NEW)
+   Also clears the officer from any assigned complaints.
+════════════════════════════════════════════════════ */
+if ($method === 'DELETE' && $action === 'delete_officer') {
+    $id = (int)($body['id'] ?? 0);
+    if ($id === 0) respond(['success' => false, 'error' => 'id required'], 400);
+
+    if ($barangay_id > 0) {
+        $stmt = $conn->prepare(
+            "DELETE FROM officers WHERE id = ? AND barangay_id = ?"
+        );
+        $stmt->bind_param('ii', $id, $barangay_id);
+    } else {
+        $stmt = $conn->prepare("DELETE FROM officers WHERE id = ?");
+        $stmt->bind_param('i', $id);
+    }
+    $ok       = $stmt->execute();
+    $affected = $stmt->affected_rows;
+    $stmt->close();
+
+    if ($ok && $affected > 0) {
+        /* Clear the officer from any complaints that referenced this officer */
+        if ($barangay_id > 0) {
+            $s2 = $conn->prepare(
+                "UPDATE complaints SET officer = '—', officer_id = NULL
+                 WHERE officer_id = ? AND barangay_id = ?"
+            );
+            $s2->bind_param('ii', $id, $barangay_id);
+        } else {
+            $s2 = $conn->prepare(
+                "UPDATE complaints SET officer = '—', officer_id = NULL WHERE officer_id = ?"
+            );
+            $s2->bind_param('i', $id);
+        }
+        $s2->execute();
+        $s2->close();
+
+        logActivity($conn, $userId, $userName, $barangay_id,
+            'officer_deleted', "Officer ID $id deleted");
+    }
+    respond(['success' => $ok && $affected > 0]);
+}
+
+
+/* ════════════════════════════════════════════════════
+   POST action=add_complaint
 ════════════════════════════════════════════════════ */
 if ($method === 'POST' && $action === 'add_complaint') {
     $d = $body['data'] ?? [];
@@ -374,6 +533,45 @@ if ($method === 'POST' && $action === 'add_complaint') {
 
 
 /* ════════════════════════════════════════════════════
+   PUT action=assign_officer   (NEW)
+   Assigns an officer (by ID + display name) to a
+   complaint. Updates both officer and officer_id columns.
+════════════════════════════════════════════════════ */
+if ($method === 'PUT' && $action === 'assign_officer') {
+    $complaintId = trim((string)($body['complaint_id'] ?? ''));
+    $officerId   = (int)($body['officer_id']           ?? 0);
+    $officerName = trim((string)($body['officer_name'] ?? '—'));
+
+    if ($complaintId === '') {
+        respond(['success' => false, 'error' => 'complaint_id required'], 400);
+    }
+
+    if ($barangay_id > 0) {
+        $stmt = $conn->prepare(
+            "UPDATE complaints
+                SET officer = ?, officer_id = ?
+              WHERE complaint_id = ? AND barangay_id = ?"
+        );
+        $stmt->bind_param('sisi', $officerName, $officerId, $complaintId, $barangay_id);
+    } else {
+        $stmt = $conn->prepare(
+            "UPDATE complaints SET officer = ?, officer_id = ? WHERE complaint_id = ?"
+        );
+        $stmt->bind_param('sis', $officerName, $officerId, $complaintId);
+    }
+    $ok = $stmt->execute();
+    $stmt->close();
+
+    if ($ok) {
+        logActivity($conn, $userId, $userName, $barangay_id,
+            'officer_assigned',
+            "Officer '$officerName' (ID: $officerId) assigned to complaint $complaintId");
+    }
+    respond(['success' => (bool)$ok]);
+}
+
+
+/* ════════════════════════════════════════════════════
    POST action=add_notification
 ════════════════════════════════════════════════════ */
 if ($method === 'POST' && $action === 'add_notification') {
@@ -395,7 +593,9 @@ if ($method === 'POST' && $action === 'add_notification') {
 ════════════════════════════════════════════════════ */
 if ($method === 'POST' && $action === 'mark_read') {
     if ($barangay_id > 0) {
-        $stmt = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE barangay_id = ? OR barangay_id IS NULL");
+        $stmt = $conn->prepare(
+            "UPDATE notifications SET is_read = 1 WHERE barangay_id = ? OR barangay_id IS NULL"
+        );
         $stmt->bind_param('i', $barangay_id);
         $stmt->execute();
         $stmt->close();

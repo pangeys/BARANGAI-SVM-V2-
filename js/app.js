@@ -26,6 +26,10 @@ const API_URL = 'api.php';
    COMPLAINTS STORE  (in-memory cache, synced to DB)
 ══════════════════════════════════════════════════════ */
 let complaints = [];
+let _officers  = [];
+let _editingOfficerId = null;
+let _assignComplaintId = null;
+let _currentDetailComplaintId = null;
 let nextId     = 1;
 let notifStore = [];
 
@@ -37,6 +41,7 @@ async function loadFromDB() {
     const data = await res.json();
 
     complaints = data.complaints  || [];
+    _officers  = data.officers    || [];
     notifStore = (data.notifications || []).map(n => ({
       msg:    n.msg,
       type:   n.type,
@@ -558,6 +563,7 @@ function _formatNoteDate(rawDate) {
    COMPLAINT DETAIL VIEW
 ══════════════════════════════════════════════════════ */
 async function viewComplaint(id) {
+  _currentDetailComplaintId = id;
   const c = complaints.find(x => x.id === id);
   if (!c) return;
 
@@ -822,6 +828,477 @@ function initToggles() {
   });
 }
 
+/* ══════════════════════════════════════════════════════
+   Officer Management (Settings > Officers tab)
+══════════════════════════════════════════════════════ */
+async function loadOfficers() {
+  try {
+    const res  = await fetch(API_URL + '?type=officers');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    _officers  = data.officers || [];
+  } catch (err) {
+    console.warn('BICTS: Could not load officers.', err);
+    _officers = [];
+  }
+  renderOfficersTable();
+  renderOfficerStats();
+}
+ 
+/**
+ * Render the officers table inside Settings > Officers tab.
+ */
+function renderOfficersTable() {
+  const tbody = document.getElementById('officers-tbody');
+  if (!tbody) return;
+ 
+  if (_officers.length === 0) {
+    tbody.innerHTML =
+      '<tr><td colspan="6" style="text-align:center;padding:48px;color:var(--text3);">' +
+        '<div style="font-size:28px;margin-bottom:8px;">👮</div>' +
+        '<div style="font-weight:600;margin-bottom:4px;">No officers yet</div>' +
+        '<div style="font-size:11px;">Click <strong>+ Add Officer</strong> to get started.</div>' +
+      '</td></tr>';
+    return;
+  }
+ 
+  tbody.innerHTML = _officers.map(function (o) {
+    const isActive   = o.status === 'Active';
+    const badgeCls   = isActive ? 'b-green' : 'b-gray';
+    const activeCases = complaints.filter(function (c) {
+      return String(c.officer_id) === String(o.id) &&
+             c.status !== 'Resolved' &&
+             c.status !== 'Closed';
+    }).length;
+ 
+    return (
+      '<tr>' +
+        '<td>' +
+          '<div style="font-weight:600;">' + _escHtml(o.name) + '</div>' +
+          (activeCases > 0
+            ? '<div style="font-size:10px;color:var(--text3);">' + activeCases + ' active case' + (activeCases !== 1 ? 's' : '') + '</div>'
+            : '') +
+        '</td>' +
+        '<td>' + _escHtml(o.rank || '—') + '</td>' +
+        '<td>' + _escHtml(o.contact || '—') + '</td>' +
+        '<td style="font-size:12px;">' + _escHtml(o.email || '—') + '</td>' +
+        '<td><span class="badge ' + badgeCls + '">' + _escHtml(o.status) + '</span></td>' +
+        '<td>' +
+          '<div style="display:flex;gap:6px;">' +
+            '<button class="btn btn-ghost btn-sm" onclick="openEditOfficer(' + o.id + ')" style="font-size:11px;">✏️ Edit</button>' +
+            '<button class="btn btn-ghost btn-sm" onclick="deleteOfficer(' + o.id + ')" ' +
+                    'style="font-size:11px;color:var(--red,#dc2626);">✕ Delete</button>' +
+          '</div>' +
+        '</td>' +
+      '</tr>'
+    );
+  }).join('');
+}
+ 
+/**
+ * Update the three stat counters above the officers table.
+ */
+function renderOfficerStats() {
+  const total    = _officers.length;
+  const active   = _officers.filter(function (o) { return o.status === 'Active';   }).length;
+  const inactive = _officers.filter(function (o) { return o.status === 'Inactive'; }).length;
+ 
+  const totalEl    = document.getElementById('officer-stat-total');
+  const activeEl   = document.getElementById('officer-stat-active');
+  const inactiveEl = document.getElementById('officer-stat-inactive');
+ 
+  if (totalEl)    totalEl.textContent    = total;
+  if (activeEl)   activeEl.textContent   = active;
+  if (inactiveEl) inactiveEl.textContent = inactive;
+}
+ 
+/**
+ * Open the Add Officer modal (blank form).
+ */
+function openAddOfficer() {
+  _editingOfficerId = null;
+  const titleEl = document.getElementById('officer-modal-title');
+  if (titleEl) titleEl.textContent = 'Add Officer';
+ 
+  _clearOfficerForm();
+  showModal('officerModal');
+}
+ 
+/**
+ * Open the Edit Officer modal (pre-filled with existing data).
+ */
+function openEditOfficer(id) {
+  const o = _officers.find(function (x) { return String(x.id) === String(id); });
+  if (!o) return;
+ 
+  _editingOfficerId = id;
+  const titleEl = document.getElementById('officer-modal-title');
+  if (titleEl) titleEl.textContent = 'Edit Officer';
+ 
+  _setField('om-name',    o.name    || '');
+  _setField('om-rank',    o.rank    || '');
+  _setField('om-contact', o.contact || '');
+  _setField('om-email',   o.email   || '');
+  _setField('om-status',  o.status  || 'Active');
+ 
+  const msgEl = document.getElementById('om-msg');
+  if (msgEl) msgEl.textContent = '';
+ 
+  showModal('officerModal');
+}
+ 
+/**
+ * Submit the Add or Edit officer form.
+ * Uses action=add_officer or action=edit_officer based on _editingOfficerId.
+ */
+async function submitOfficer() {
+  const name    = (_getField('om-name')    || '').trim();
+  const rank    = (_getField('om-rank')    || '').trim();
+  const contact = (_getField('om-contact') || '').trim();
+  const email   = (_getField('om-email')   || '').trim();
+  const status  = _getField('om-status') || 'Active';
+  const msgEl   = document.getElementById('om-msg');
+
+  /* Validate */
+  if (!name) {
+    if (msgEl) { msgEl.textContent = 'Officer name is required.'; msgEl.style.color = 'var(--red,#dc2626)'; }
+    document.getElementById('om-name')?.focus();
+    return;
+  }
+
+  const btn = document.getElementById('om-submit-btn');
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+  const isEdit  = _editingOfficerId !== null;
+  const payload = {
+    action:  isEdit ? 'edit_officer' : 'add_officer',
+    name, rank, contact, email, status,
+  };
+  if (isEdit) payload.id = _editingOfficerId;
+
+  try {
+    const res    = await fetch(API_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    });
+    const result = await res.json();
+
+    if (result.success) {
+      closeModal('officerModal');
+
+      if (isEdit) {
+        const idx = _officers.findIndex(function(x) {
+          return String(x.id) === String(_editingOfficerId);
+        });
+        if (idx !== -1) {
+          _officers[idx] = Object.assign(_officers[idx], { name, rank, contact, email, status });
+        }
+        complaints.forEach(function(c) {
+          if (String(c.officer_id) === String(_editingOfficerId)) c.officer = name;
+        });
+        renderAll();
+      } else {
+        _officers.push({
+          id:          result.id,
+          name:        name,
+          rank:        rank,
+          contact:     contact,
+          email:       email,
+          status:      status,
+          barangay_id: (window.CURRENT_USER || {}).barangay_id || 0,
+          created_at:  new Date().toISOString().slice(0, 19).replace('T', ' ')
+        });
+      }
+
+      renderOfficersTable();
+      renderOfficerStats();
+
+      await pushNotif(
+        isEdit ? 'Officer updated: ' + name : 'New officer added: ' + name,
+        'success'
+      );
+    } else {
+      if (msgEl) { msgEl.textContent = result.error || 'Failed to save officer.'; msgEl.style.color = 'var(--red,#dc2626)'; }
+    }
+  } catch (err) {
+    console.warn('BICTS: Officer save failed.', err);
+    if (msgEl) { msgEl.textContent = 'Network error — please try again.'; msgEl.style.color = 'var(--red,#dc2626)'; }
+  } finally {
+    if (btn) { btn.textContent = 'Save Officer'; btn.disabled = false; }
+  }
+}
+ 
+/**
+ * Delete an officer after confirmation.
+ * The backend also clears officer/officer_id from any affected complaints.
+ */
+async function deleteOfficer(id) {
+  const o = _officers.find(function (x) { return String(x.id) === String(id); });
+  if (!o) return;
+ 
+  const activeCases = complaints.filter(function (c) {
+    return String(c.officer_id) === String(id) &&
+           c.status !== 'Resolved' &&
+           c.status !== 'Closed';
+  }).length;
+ 
+  const warning = activeCases > 0
+    ? '\n\nWarning: this officer has ' + activeCases + ' active case(s) — they will be unassigned.'
+    : '';
+ 
+  if (!confirm('Delete officer "' + o.name + '"? This cannot be undone.' + warning)) return;
+ 
+  try {
+    const res    = await fetch(API_URL, {
+      method:  'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'delete_officer', id }),
+    });
+    const result = await res.json();
+ 
+    if (result.success) {
+      /* Update local cache — clear from complaints too */
+      _officers = _officers.filter(function (x) { return String(x.id) !== String(id); });
+      complaints.forEach(function (c) {
+        if (String(c.officer_id) === String(id)) {
+          c.officer    = '—';
+          c.officer_id = 0;
+        }
+      });
+      renderOfficersTable();
+      renderOfficerStats();
+      renderAll();
+      await pushNotif('Officer "' + o.name + '" removed.', 'info');
+    } else {
+      alert(result.error || 'Could not delete officer. Please try again.');
+    }
+  } catch (err) {
+    console.warn('BICTS: Officer delete failed.', err);
+    alert('Network error — please try again.');
+  }
+}
+ 
+ 
+/* ══════════════════════════════════════════════════════
+   ASSIGN OFFICER — dynamic modal
+   Endpoint: PUT action=assign_officer
+══════════════════════════════════════════════════════ */
+ 
+/**
+ * Open the Assign Officer modal for a given complaint.
+ * Dynamically populates the <select> with active officers
+ * and their current caseload counts.
+ *
+ * @param {string} complaintId  — e.g. '#001'
+ */
+async function openAssignModal(complaintId) {
+  if (!complaintId) return;
+  _assignComplaintId = complaintId;
+ 
+  /* Ensure we have a current officer list */
+  if (_officers.length === 0) await loadOfficers();
+ 
+  const select = document.getElementById('assign-officer-select');
+  const msgEl  = document.getElementById('assign-msg');
+  const ctxEl  = document.getElementById('assign-complaint-ctx');
+ 
+  if (msgEl) msgEl.textContent = '';
+ 
+  /* Show complaint context badges */
+  const c = complaints.find(function (x) { return x.id === complaintId; });
+  if (ctxEl && c) {
+    ctxEl.innerHTML =
+      '<span class="badge b-blue">'        + _escHtml(c.category || '—') + '</span>' +
+      '<span class="badge b-gray">'        + _escHtml(c.id)              + '</span>' +
+      '<span class="badge ' + c.pb + '">'  + _escHtml(c.priority || '—') + ' Priority</span>';
+  }
+ 
+  /* Build officer options — only Active officers */
+  if (select) {
+    const activeOfficers = _officers.filter(function (o) { return o.status === 'Active'; });
+ 
+    /* Count open cases per officer */
+    const caseCount = {};
+    complaints.forEach(function (comp) {
+      if (comp.officer_id && comp.status !== 'Resolved' && comp.status !== 'Closed') {
+        caseCount[comp.officer_id] = (caseCount[comp.officer_id] || 0) + 1;
+      }
+    });
+ 
+    if (activeOfficers.length === 0) {
+      select.innerHTML =
+        '<option value="">No active officers — add some in Settings → Officers</option>';
+    } else {
+      select.innerHTML =
+        '<option value="">-- Select Officer --</option>' +
+        activeOfficers.map(function (o) {
+          const n     = caseCount[o.id] || 0;
+          const label = _escHtml(o.name) +
+                        (o.rank ? ' · ' + _escHtml(o.rank) : '') +
+                        '  (' + n + ' active case' + (n !== 1 ? 's' : '') + ')';
+          return '<option value="' + o.id + '" data-name="' + _escHtml(o.name) + '">' +
+                 label + '</option>';
+        }).join('');
+    }
+ 
+    /* Pre-select existing assignment if any */
+    if (c && c.officer_id) select.value = String(c.officer_id);
+  }
+ 
+  /* Clear target date */
+  const dateEl = document.getElementById('assign-target-date');
+  if (dateEl) dateEl.value = '';
+ 
+  showModal('assignModal');
+}
+ 
+/**
+ * Submit the officer assignment — saves to DB and updates local cache.
+ */
+async function submitAssignOfficer() {
+  const select  = document.getElementById('assign-officer-select');
+  const dateEl  = document.getElementById('assign-target-date');
+  const msgEl   = document.getElementById('assign-msg');
+  const btn     = document.getElementById('assign-submit-btn');
+ 
+  /* Validate */
+  if (!select || !select.value) {
+    if (msgEl) {
+      msgEl.textContent  = 'Please select an officer.';
+      msgEl.style.color  = 'var(--red,#dc2626)';
+    }
+    return;
+  }
+ 
+  if (msgEl) msgEl.textContent = '';
+ 
+  const officerId   = parseInt(select.value, 10);
+  const selectedOpt = select.options[select.selectedIndex];
+  /* data-name holds the plain name; fall back to splitting the option text */
+  const officerName = selectedOpt.getAttribute('data-name') ||
+                      (selectedOpt.text.split(' · ')[0].split('(')[0].trim());
+ 
+  if (btn) { btn.textContent = 'Assigning…'; btn.disabled = true; }
+ 
+  try {
+    const res    = await fetch(API_URL, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        action:       'assign_officer',
+        complaint_id: _assignComplaintId,
+        officer_id:   officerId,
+        officer_name: officerName,
+        target_date:  dateEl ? dateEl.value : '',
+      }),
+    });
+    const result = await res.json();
+ 
+    if (result.success) {
+      /* Update local complaints cache */
+      const c = complaints.find(function (x) { return x.id === _assignComplaintId; });
+      if (c) {
+        c.officer    = officerName;
+        c.officer_id = officerId;
+      }
+ 
+      /* Refresh the detail view if it is open */
+      const detailEl = document.getElementById('detail-officer');
+      if (detailEl) detailEl.textContent = officerName;
+ 
+      renderAll();
+      closeModal('assignModal');
+ 
+      await pushNotif(
+        'Officer "' + officerName + '" assigned to complaint ' + _assignComplaintId + '.',
+        'success'
+      );
+    } else {
+      if (msgEl) {
+        msgEl.textContent = result.error || 'Assignment failed — please try again.';
+        msgEl.style.color = 'var(--red,#dc2626)';
+      }
+    }
+  } catch (err) {
+    console.warn('BICTS: Officer assignment failed.', err);
+    if (msgEl) {
+      msgEl.textContent = 'Network error — please try again.';
+      msgEl.style.color = 'var(--red,#dc2626)';
+    }
+  } finally {
+    if (btn) { btn.textContent = 'Assign Officer'; btn.disabled = false; }
+  }
+}
+ 
+ 
+/* ══════════════════════════════════════════════════════
+   SETTINGS TAB SWITCHER
+   Handles show/hide of the Officers panel vs the main
+   settings panel. Compatible with the existing initTabs()
+   active-class toggle.
+══════════════════════════════════════════════════════ */
+ 
+/**
+ * Switch between settings panels.
+ * @param {string} tabName  — 'general' | 'categories' | 'ai' | 'audit' | 'officers'
+ * @param {Element|null} el — the clicked tab element (null when called programmatically)
+ */
+function switchSettingsTab(tabName, el) {
+  /* Update active class on tabs */
+  const tabsContainer = document.getElementById('settings-tabs');
+  if (tabsContainer) {
+    tabsContainer.querySelectorAll('.tab').forEach(function (t) {
+      t.classList.remove('active');
+    });
+    if (el) {
+      el.classList.add('active');
+    } else {
+      /* Programmatic call — find tab by text */
+      Array.from(tabsContainer.querySelectorAll('.tab')).forEach(function (t) {
+        if (t.textContent.toLowerCase().includes(tabName)) t.classList.add('active');
+      });
+    }
+  }
+ 
+  const officerPanel = document.getElementById('settings-panel-officers');
+  const mainPanel    = document.getElementById('settings-main-panel');
+ 
+  if (tabName === 'officers') {
+    if (officerPanel) officerPanel.style.display = '';
+    if (mainPanel)    mainPanel.style.display    = 'none';
+    /* Refresh the officer list every time the tab is opened */
+    loadOfficers();
+  } else {
+    if (officerPanel) officerPanel.style.display = 'none';
+    if (mainPanel)    mainPanel.style.display    = '';
+  }
+}
+ 
+ 
+/* ══════════════════════════════════════════════════════
+   PRIVATE HELPERS  (officer form utilities)
+══════════════════════════════════════════════════════ */
+ 
+function _clearOfficerForm() {
+  ['om-name', 'om-rank', 'om-contact', 'om-email'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  _setField('om-status', 'Active');
+  const msgEl = document.getElementById('om-msg');
+  if (msgEl) msgEl.textContent = '';
+}
+ 
+function _getField(id) {
+  const el = document.getElementById(id);
+  return el ? el.value : '';
+}
+ 
+function _setField(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value;
+}
 
 /* ══════════════════════════════════════════════════════
    BOOT
