@@ -839,7 +839,7 @@ async function loadOfficers() {
     _officers  = data.officers || [];
   } catch (err) {
     console.warn('BICTS: Could not load officers.', err);
-    _officers = [];
+    // do not clear _officers on failure
   }
   renderOfficersTable();
   renderOfficerStats();
@@ -1027,7 +1027,7 @@ async function submitOfficer() {
   } finally {
     if (btn) { btn.textContent = 'Save Officer'; btn.disabled = false; }
   }
-}
+} 
  
 /**
  * Delete an officer after confirmation.
@@ -1267,8 +1267,12 @@ function switchSettingsTab(tabName, el) {
   if (tabName === 'officers') {
     if (officerPanel) officerPanel.style.display = '';
     if (mainPanel)    mainPanel.style.display    = 'none';
-    /* Refresh the officer list every time the tab is opened */
-    loadOfficers();
+    if (_officers.length > 0) {
+      renderOfficersTable();
+      renderOfficerStats();
+    } else {
+      loadOfficers();
+    }
   } else {
     if (officerPanel) officerPanel.style.display = 'none';
     if (mainPanel)    mainPanel.style.display    = '';
