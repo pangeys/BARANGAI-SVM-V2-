@@ -100,7 +100,7 @@ async function addComplaint(data) {
 /* ── Resolve a complaint ── */
 async function resolveComplaint(id) {
   const c = complaints.find(x => x.id === id);
-  if (!c || c.status === 'Resolved') return;
+  if (!c || c.status === 'Resolved' || c.status === 'Closed') return;
 
   c.status     = 'Resolved';
   c.sb         = 'b-green';
@@ -126,6 +126,49 @@ async function resolveComplaint(id) {
   }
 
   await pushNotif('Complaint ' + id + ' (' + c.category + ') marked as Resolved.', 'success');
+}
+
+/* ── Close a complaint (final state, distinct from Resolved) ── */
+async function closeComplaint(id, reason) {
+  const c = complaints.find(x => x.id === id);
+  if (!c || c.status === 'Resolved' || c.status === 'Closed') return;
+ 
+  c.status      = 'Closed';
+  c.sb          = 'b-gray';
+  c.closeReason = reason || 'Closed';
+  c.resolvedAt  = new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+ 
+  renderAll();
+ 
+  try {
+    await fetch(API_URL, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'close_complaint', id, reason: c.closeReason }),
+    });
+  } catch (err) {
+    console.warn('BICTS: DB close sync failed.', err);
+  }
+ 
+  await pushNotif('Complaint ' + id + ' (' + c.category + ') closed — ' + c.closeReason + '.', 'info');
+}
+ 
+/* ── Close Case modal handlers ── */
+let _closingId = null;
+function openCloseModal(id) {
+  _closingId = id;
+  const sel = document.getElementById('close-reason');
+  if (sel) sel.selectedIndex = 0;
+  showModal('closeModal');
+}
+async function submitCloseCase() {
+  if (!_closingId) return;
+  const reason = document.getElementById('close-reason')?.value || 'Closed';
+  const id = _closingId;
+  closeModal('closeModal');
+  await closeComplaint(id, reason);
+  _closingId = null;
+  if (typeof viewComplaint === 'function') viewComplaint(id);
 }
 
 /* ── Advance complaint to the next status step ── */
@@ -593,6 +636,23 @@ async function viewComplaint(id) {
       resolveBtn.style.color       = 'var(--text3)';
       resolveBtn.style.borderColor = 'var(--border)';
       resolveBtn.onclick           = null;
+    }
+  }
+
+  const closeBtn = document.getElementById('detail-close-btn');
+  if (closeBtn) {
+    if (c.status === 'Closed') {
+      closeBtn.textContent  = '⊘ Closed';
+      closeBtn.style.color  = 'var(--text3)';
+      closeBtn.onclick      = null;
+      closeBtn.style.display = 'inline-flex';
+    } else if (c.status === 'Resolved') {
+      closeBtn.style.display = 'none';
+    } else {
+      closeBtn.textContent   = '⊘ Close Case';
+      closeBtn.style.color   = 'var(--text3)';
+      closeBtn.style.display  = 'inline-flex';
+      closeBtn.onclick = () => openCloseModal(id);
     }
   }
 

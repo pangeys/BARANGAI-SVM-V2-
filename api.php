@@ -116,6 +116,7 @@ if ($method === 'GET' && $type === 'init') {
             'status'      => $row['status'],
             'sb'          => $row['status_badge'],
             'resolvedAt'  => $row['resolved_at'],
+            'closeReason' => $row['close_reason'] ?? '',
             'barangay_id' => intval($row['barangay_id']),
         ];
     }
@@ -609,30 +610,39 @@ if ($method === 'POST' && $action === 'mark_read') {
 /* ════════════════════════════════════════════════════
    PUT action=update_status
 ════════════════════════════════════════════════════ */
-if ($method === 'PUT' && $action === 'update_status') {
-    $id         = (string)($body['id']          ?? '');
-    $status     = (string)($body['status']      ?? '');
-    $sb         = (string)($body['sb']          ?? 'b-gray');
-    $resolvedAt = (string)($body['resolved_at'] ?? '');
-
+if ($method === 'PUT' && $action === 'close_complaint') {
+    $id     = (string)($body['id']     ?? '');
+    $reason = (string)($body['reason'] ?? 'Closed');
+    $sb     = 'b-gray';
+    $closedAt = date('h:i A');
+ 
+    if ($id === '') {
+        respond(['success' => false, 'error' => 'id required'], 400);
+    }
+ 
     if ($barangay_id > 0) {
         $stmt = $conn->prepare(
             "UPDATE complaints
-                SET status = ?, status_badge = ?, resolved_at = ?
+                SET status = 'Closed', status_badge = ?, close_reason = ?, resolved_at = ?
               WHERE complaint_id = ? AND barangay_id = ?"
         );
-        $stmt->bind_param('ssssi', $status, $sb, $resolvedAt, $id, $barangay_id);
+        $stmt->bind_param('ssssi', $sb, $reason, $closedAt, $id, $barangay_id);
     } else {
         $stmt = $conn->prepare(
             "UPDATE complaints
-                SET status = ?, status_badge = ?, resolved_at = ?
+                SET status = 'Closed', status_badge = ?, close_reason = ?, resolved_at = ?
               WHERE complaint_id = ?"
         );
-        $stmt->bind_param('ssss', $status, $sb, $resolvedAt, $id);
+        $stmt->bind_param('ssss', $sb, $reason, $closedAt, $id);
     }
     $ok = $stmt->execute();
     $stmt->close();
-    respond(["success" => (bool)$ok]);
+ 
+    if ($ok) {
+        logActivity($conn, $userId, $userName, $barangay_id,
+            'complaint_closed', "Complaint $id closed — $reason");
+    }
+    respond(['success' => (bool)$ok]);
 }
 
 

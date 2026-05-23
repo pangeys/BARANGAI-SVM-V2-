@@ -197,6 +197,7 @@
       <!-- CHANGED: now calls openAssignModal() with the current complaint ID -->
       <button class="btn btn-primary btn-sm" onclick="openAssignModal(_currentDetailComplaintId)">Assign Officer</button>
       <button class="btn btn-secondary btn-sm" id="detail-resolve-btn" style="color:var(--green);border-color:var(--green);">✓ Resolve</button>
+      <button class="btn btn-secondary btn-sm" id="detail-close-btn" style="color:var(--text3);">⊘ Close Case</button>
     </div>
   </div>
   <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;">
@@ -766,6 +767,36 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('officerModal')">Cancel</button>
       <button class="btn btn-primary" id="om-submit-btn" onclick="submitOfficer()">Save Officer</button>
+    </div>
+  </div>
+</div>
+
+ <!-- CLOSE CASE -->
+<div id="closeModal" class="modal-overlay">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title" style="color:var(--text2)">⊘ Close Case</div>
+      <div class="modal-close" onclick="closeModal('closeModal')">✕</div>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="margin-bottom:14px;">
+        Closing marks a case finished <strong>without</strong> resolving it — e.g. withdrawn, referred, or no action needed.
+      </div>
+      <div class="field">
+        <div class="label">Reason for closing <span>*</span></div>
+        <select class="inp sel" id="close-reason">
+          <option>Withdrawn by complainant</option>
+          <option>Referred to another office</option>
+          <option>Duplicate complaint</option>
+          <option>No further action needed</option>
+          <option>Insufficient information</option>
+          <option>Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('closeModal')">Cancel</button>
+      <button class="btn" style="background:var(--text2,#444);color:#fff;" onclick="submitCloseCase()">⊘ Confirm Close</button>
     </div>
   </div>
 </div>

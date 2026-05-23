@@ -64,7 +64,7 @@ function renderDashboardDonut() {
 function renderCriticalCases() {
   const el = document.getElementById('critical-cases');
   if (!el) return;
-  const critical = complaints.filter(c => c.priority === 'Critical' && c.status !== 'Resolved');
+  const critical = complaints.filter(c => c.priority === 'Critical' && c.status !== 'Resolved' && c.status !== 'Closed');
   if (critical.length === 0) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">No critical cases</div><div class="empty-desc">No complaints require immediate attention.</div></div>';
     return;
@@ -99,9 +99,10 @@ function renderDashboardStats() {
     return;
   }
   const rows = complaints.slice(0, 5).map(c => {
-    const btn = c.status !== 'Resolved'
+    const isFinished = c.status === 'Resolved' || c.status === 'Closed';
+    const btn = !isFinished
       ? '<button class="btn btn-sm" style="background:var(--green);color:#fff;border:none;" onclick="resolveComplaint(\'' + c.id + '\')">✓ Resolve</button>'
-      : '<span style="font-size:11px;color:var(--green);font-weight:600;">✓ Resolved</span>';
+      : '<span style="font-size:11px;color:' + (c.status === 'Closed' ? 'var(--text3)' : 'var(--green)') + ';font-weight:600;">' + (c.status === 'Closed' ? '⊘ Closed' : '✓ Resolved') + '</span>';
     return '<tr>' +
       '<td class="mono">' + c.id + '</td>' +
       '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + c.description + '</td>' +
@@ -142,9 +143,10 @@ function renderComplaints() {
   }
 
   tbody.innerHTML = filtered.map(c => {
-    const btn = c.status !== 'Resolved'
+    const isFinished = c.status === 'Resolved' || c.status === 'Closed';
+    const btn = !isFinished
       ? '<button class="btn btn-sm" style="background:var(--green);color:#fff;border:none;" onclick="resolveComplaint(\'' + c.id + '\')">✓ Resolve</button>'
-      : '<span style="font-size:11px;color:var(--green);font-weight:600;">✓ Resolved</span>';
+      : '<span style="font-size:11px;color:' + (c.status === 'Closed' ? 'var(--text3)' : 'var(--green)') + ';font-weight:600;">' + (c.status === 'Closed' ? '⊘ Closed' : '✓ Resolved') + '</span>';
     return '<tr>' +
       '<td class="mono">' + c.id + '</td>' +
       '<td style="font-size:10px;color:var(--text3)">' + c.date + '</td>' +
@@ -173,9 +175,10 @@ function renderPriorityQueue() {
   tbody.innerHTML = sorted.map((c, i) => {
     const scoreColor = parseFloat(c.score) >= 85 ? 'var(--red)' : parseFloat(c.score) >= 70 ? 'var(--amber)' : 'var(--blue)';
     const ahp        = computeAHPScore(c.category, c.affected, c.description);
-    const btn        = c.status !== 'Resolved'
+    const isFinished = c.status === 'Resolved' || c.status === 'Closed';
+    const btn        = !isFinished
       ? '<button class="btn btn-sm" style="background:var(--green);color:#fff;border:none;" onclick="resolveComplaint(\'' + c.id + '\')">✓ Resolve</button>'
-      : '<span style="font-size:11px;color:var(--green);font-weight:600;">✓ Done</span>';
+      : '<span style="font-size:11px;color:' + (c.status === 'Closed' ? 'var(--text3)' : 'var(--green)') + ';font-weight:600;">' + (c.status === 'Closed' ? '⊘ Closed' : '✓ Done') + '</span>';
     return '<tr>' +
       '<td style="font-weight:700;font-family:var(--mono);color:var(--text3)">#' + (i + 1) + '</td>' +
       '<td class="mono">' + c.id + '</td>' +
@@ -202,6 +205,7 @@ function renderKanban() {
     { status: 'In Progress', label: 'In Progress',  color: '#1E5FA8', badge: 'b-blue'  },
     { status: 'For Hearing', label: 'For Hearing',  color: '#B06000', badge: 'b-amber' },
     { status: 'Resolved',    label: 'Resolved',     color: '#1B7A4A', badge: 'b-green' },
+    { status: 'Closed',      label: 'Closed',       color: '#8A9BB0', badge: 'b-gray'  },
   ];
   el.innerHTML = COLS.map(col => {
     const cards = complaints.filter(c => c.status === col.status);
@@ -213,10 +217,12 @@ function renderKanban() {
       : cards.map(c => {
           const shortDesc = c.description.length > 60 ? c.description.slice(0, 60) + '…' : c.description;
           let actions = '';
-          if (col.status !== 'Resolved') {
+          if (col.status !== 'Resolved' && col.status !== 'Closed') {
             actions += '<button class="btn btn-sm" style="background:var(--green);color:#fff;border:none;font-size:10px;padding:3px 8px;" onclick="resolveComplaint(\'' + c.id + '\')">✓ Resolve</button>';
             if (nextLabel) actions += '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;" onclick="advanceStatus(\'' + c.id + '\')">→ ' + nextLabel + '</button>';
             actions = '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">' + actions + '</div>';
+          } else if (col.status === 'Closed') {
+            actions = '<div style="margin-top:6px;font-size:10px;color:var(--text3);">⊘ Closed' + (c.closeReason ? ' · ' + c.closeReason : '') + '</div>';
           } else {
             actions = '<div style="margin-top:6px;font-size:10px;color:var(--green);">✓ Resolved' + (c.resolvedAt ? ' · ' + c.resolvedAt : '') + '</div>';
           }
