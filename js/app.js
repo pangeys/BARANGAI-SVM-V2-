@@ -11,6 +11,9 @@
      • Full in-memory fallback if api.php is unreachable.
 
    Depends on: data.js, classifier.js, render.js, dataset.js
+
+   NOTE: The admin login + profile gate now lives in login.html.
+   No login/profile logic belongs in this file.
 ═══════════════════════════════════════════════════════ */
 
 /* ══════════════════════════════════════════════════════
@@ -210,6 +213,9 @@ function showScreen(id, navEl) {
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     navEl.classList.add('active');
   }
+
+  /* Lazy-load the Users page data the first time it's opened */
+  if (id === 'users' && typeof loadUsers === 'function') loadUsers();
 }
 
 function doLogin() {

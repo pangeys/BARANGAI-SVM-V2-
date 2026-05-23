@@ -29,6 +29,9 @@ case 'login':
     if (!$user || !password_verify($password, $user['password_hash']))
         out(false, ['error' => 'Invalid username/email or password'], 401);
 
+    // grab the PREVIOUS last_login before we overwrite it (for the confirm screen)
+    $prevLogin = $user['last_login'] ?? null;
+
     // also grab barangay name for the resident portal header
     $brgyName = '';
     if ($user['barangay_id']) {
@@ -40,6 +43,12 @@ case 'login':
         $s->close();
     }
 
+    // record this login: stamp last_login + bump counter
+    $upd = $db->prepare('UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = ?');
+    $upd->bind_param('i', $user['id']);
+    $upd->execute();
+    $upd->close();
+
     $_SESSION['user'] = [
         'id'          => (int)$user['id'],
         'name'        => $user['full_name'],
@@ -47,7 +56,24 @@ case 'login':
         'barangay_id' => (int)$user['barangay_id'],
         'barangay'    => $brgyName,
     ];
-    out(true, ['role' => $user['role'], 'name' => $user['full_name']]);
+
+    // write a login entry to the activity log (audit trail)
+    $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+    $alog = $db->prepare(
+        'INSERT INTO activity_log (user_id, user_name, barangay_id, action, detail, ip_address)
+         VALUES (?, ?, ?, "login", "Signed in", ?)'
+    );
+    $uid = (int)$user['id']; $un = $user['full_name']; $bid = (int)$user['barangay_id'];
+    $alog->bind_param('isis', $uid, $un, $bid, $ip);
+    $alog->execute();
+    $alog->close();
+
+    out(true, [
+        'role'              => $user['role'],
+        'name'              => $user['full_name'],
+        'profile_completed' => (int)($user['profile_completed'] ?? 0),
+        'last_login'        => $prevLogin,   // null on very first login
+    ]);
 
 // ── SIGN UP (residents only) ───────────────────────────────────────
 case 'signup':
