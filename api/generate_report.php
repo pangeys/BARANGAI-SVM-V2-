@@ -7,6 +7,7 @@
 //    type       = classification | volume | response | outcome
 //    date_from  = YYYY-MM-DD  (optional)
 //    date_to    = YYYY-MM-DD  (optional)
+//    view       = 1           (optional — preview in browser instead of download)
 //
 //  Uses FPDF (no Composer needed — just drop fpdf.php in api/)
 //  Download: http://www.fpdf.org/  → fpdf182.zip → fpdf.php
@@ -19,6 +20,7 @@ $db        = getDB();
 $type      = $_GET['type']      ?? 'volume';
 $date_from = $_GET['date_from'] ?? '';
 $date_to   = $_GET['date_to']   ?? '';
+$viewMode  = !empty($_GET['view']);   // ?view=1 -> preview inline, otherwise download
 
 // ── Build date filter SQL ──
 $where  = '';
@@ -304,7 +306,7 @@ function buildVolumeReport($pdf, $complaints) {
               ? mb_substr($c['description'], 0, 52) . '...'
               : $c['description'];
         $pdf->TableRow([
-            ['w' => 15, 'v' => $c['complaint_no']],
+            ['w' => 15, 'v' => $c['complaint_id']],
             ['w' => 22, 'v' => date('M j, Y', strtotime($c['date_filed']))],
             ['w' => 65, 'v' => $desc],
             ['w' => 42, 'v' => $c['category']],
@@ -377,7 +379,7 @@ function buildResponseTimeReport($pdf, $complaints) {
     foreach ($complaints as $i => $c) {
         $resolvedAt = $c['resolved_at'] ? date('M j, Y', strtotime($c['resolved_at'])) : '—';
         $pdf->TableRow([
-            ['w' => 16, 'v' => $c['complaint_no']],
+            ['w' => 16, 'v' => $c['complaint_id']],
             ['w' => 22, 'v' => date('M j, Y', strtotime($c['date_filed']))],
             ['w' => 42, 'v' => $c['category']],
             ['w' => 30, 'v' => $c['officer']],
@@ -460,7 +462,7 @@ function buildOutcomeReport($pdf, $complaints) {
                   ? mb_substr($c['description'], 0, 52) . '...'
                   : $c['description'];
             $pdf->TableRow([
-                ['w' => 16, 'v' => $c['complaint_no']],
+                ['w' => 16, 'v' => $c['complaint_id']],
                 ['w' => 22, 'v' => date('M j, Y', strtotime($c['date_filed']))],
                 ['w' => 65, 'v' => $desc],
                 ['w' => 42, 'v' => $c['category']],
@@ -514,8 +516,16 @@ switch ($type) {
 }
 
 // Stream PDF to browser
+// view=1  -> show inline in the browser (preview)
+// default -> force download (Export)
 $filename = str_replace(' ', '_', $titleText) . '_' . date('Y-m-d') . '.pdf';
-header('Content-Type: application/pdf');
-header('Content-Disposition: attachment; filename="' . $filename . '"');
-$pdf->Output('D', $filename);
+if ($viewMode) {
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="' . $filename . '"');
+    $pdf->Output('I', $filename);
+} else {
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    $pdf->Output('D', $filename);
+}
 $db->close();

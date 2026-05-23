@@ -47,7 +47,7 @@
       <div id="topbar-title">Dashboard</div>
       <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
         <button class="btn btn-primary btn-sm" onclick="showModal('submitModal')">+ Submit Complaint</button>
-        <div class="topbar-action" onclick="showScreen('notifs',null)">🔔</div>
+        <div class="topbar-action" onclick="showScreen('notifs',null)" style="position:relative;">🔔<span id="notif-badge" style="display:none;position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--red,#dc2626);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center;">0</span></div>
         <div class="topbar-action" onclick="openMyAccount()" title="My account">👤</div>
       </div>
     </div>
@@ -474,7 +474,7 @@
 <div id="screen-notifs" class="screen">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
     <div class="page-header" style="margin:0;"><div class="page-title">Notifications</div></div>
-    <button class="btn btn-ghost btn-sm">Mark all as read</button>
+    <button class="btn btn-ghost btn-sm" onclick="markAllNotifsRead()">Mark all as read</button>
   </div>
   <div class="card">
     <div class="card-body" id="notifs-list"></div>

@@ -104,9 +104,10 @@ if ($method === 'GET' && $type === 'init') {
     }
     while ($row = $r2->fetch_assoc()) {
         $notifs[] = [
-            'msg'  => $row['msg'],
-            'type' => $row['type'],
-            'time' => $row['time'],
+            'msg'    => $row['msg'],
+            'type'   => $row['type'],
+            'time'   => $row['time'],
+            'isRead' => intval($row['is_read'] ?? 0),
         ];
     }
     if (isset($stmt)) { $stmt->close(); unset($stmt); }
@@ -197,6 +198,21 @@ if ($method === 'POST' && $action === 'add_notification') {
     $stmt->bind_param('sssi', $msg, $ntype, $time, $bid);
     $stmt->execute();
     $stmt->close();
+    respond(["success" => true]);
+}
+
+/* ════════════════════════════════════════════════════
+   POST — mark_read  (marks THIS barangay's notifications read)
+════════════════════════════════════════════════════ */
+if ($method === 'POST' && $action === 'mark_read') {
+    if ($barangay_id > 0) {
+        $stmt = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE barangay_id = ? OR barangay_id IS NULL");
+        $stmt->bind_param('i', $barangay_id);
+        $stmt->execute();
+        $stmt->close();
+    } else {
+        $conn->query("UPDATE notifications SET is_read = 1");
+    }
     respond(["success" => true]);
 }
 

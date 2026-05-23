@@ -37,7 +37,12 @@ async function loadFromDB() {
     const data = await res.json();
 
     complaints = data.complaints  || [];
-    notifStore = data.notifications || [];
+    notifStore = (data.notifications || []).map(n => ({
+      msg:    n.msg,
+      type:   n.type,
+      time:   n.time,
+      unread: n.isRead ? false : true,
+    }));
     nextId     = parseInt(data.nextId) || 1;
 
     console.log('BICTS: Loaded from DB —', complaints.length, 'complaints,', notifStore.length, 'notifications.');
@@ -156,7 +161,7 @@ async function advanceStatus(id) {
 /* ── Push a notification (saves to DB + local cache) ── */
 async function pushNotif(msg, type) {
   const time = new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-  notifStore.unshift({ msg, type, time });
+  notifStore.unshift({ msg, type, time, unread: true });
   renderNotifs();
 
   /* Bell flash */

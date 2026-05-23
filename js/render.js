@@ -312,7 +312,7 @@ function renderReports() {
     '<div style="width:38px;height:38px;border-radius:var(--r);background:var(--sky-light);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">' + r.icon + '</div>' +
     '<div style="flex:1"><div style="font-size:13px;font-weight:600;color:var(--text)">' + r.title + '</div>' +
     '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + r.desc + '</div></div>' +
-    '<button class="btn btn-ghost btn-sm">View</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="viewReport(\'' + r.title + '\')">View</button>' +
     '<button class="btn btn-primary btn-sm" onclick="downloadReportPDF(\'' + r.title + '\')">⬇ Export PDF</button>' +
     '</div></div>'
   ).join('');
@@ -355,6 +355,7 @@ function renderIsoEval() {
 ══════════════════════════════════════════════════════ */
 function renderNotifs() {
   const el = document.getElementById('notifs-list');
+  updateNotifBadge();
   if (!el) return;
   if (notifStore.length === 0) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">🔔</div><div class="empty-title">No notifications</div><div class="empty-desc">You\'re all caught up.</div></div>';
@@ -364,8 +365,34 @@ function renderNotifs() {
     '<div class="notif-item">' +
     '<div class="notif-ico">' + (n.type === 'success' ? '✅' : '📋') + '</div>' +
     '<div style="flex:1;"><div class="notif-txt">' + n.msg + '</div><div class="notif-time">' + n.time + '</div></div>' +
-    '<div class="notif-dot2"></div></div>'
+    (n.unread !== false ? '<div class="notif-dot2"></div>' : '') +
+    '</div>'
   ).join('');
+}
+
+/* Red count badge on the topbar bell */
+function updateNotifBadge() {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  const count = notifStore.filter(n => n.unread !== false).length;
+  if (count > 0) {
+    badge.textContent = count > 99 ? '99+' : count;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+/* "Mark all as read" — clears dots + badge, and saves to DB */
+function markAllNotifsRead() {
+  notifStore.forEach(n => { n.unread = false; });
+  renderNotifs();
+  /* persist so it stays read after logout/reload */
+  fetch(API_URL, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ action: 'mark_read' }),
+  }).catch(err => console.warn('BICTS: mark_read sync failed.', err));
 }
 
 function renderSettings() {
@@ -486,6 +513,19 @@ function downloadReportPDF(title) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+/* ── Preview PDF in a new browser tab (View button) ── */
+function viewReport(title) {
+  const dateFrom = document.getElementById('report-date-from')?.value || '';
+  const dateTo   = document.getElementById('report-date-to')?.value   || '';
+  const type     = getReportType(title);
+
+  let url = 'http://localhost/BARANGAI-SVM-V2-/api/generate_report.php?type=' + type + '&view=1';
+  if (dateFrom) url += '&date_from=' + encodeURIComponent(dateFrom);
+  if (dateTo)   url += '&date_to='   + encodeURIComponent(dateTo);
+
+  window.open(url, '_blank');
 }
 
 /* ═══════════════════════════════════════════════════════════
