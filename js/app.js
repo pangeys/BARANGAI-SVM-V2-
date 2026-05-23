@@ -231,11 +231,166 @@ function doLogin() {
 function doLogout() {
   fetch('api/auth.php?action=logout').finally(() => location.href = 'login.html');
 }
+/* ══════════════════════════════════════════════════════
+   NOTES DETAIL VIEW
+══════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════
+   CASE NOTES
+══════════════════════════════════════════════════════ */
+let _currentComplaintNotes = [];
+let _currentComplaintId    = null;
 
+// Loads notes from DB for a specific complaint
+async function loadNotes(complaintId) {
+  _currentComplaintId    = complaintId;
+  _currentComplaintNotes = [];
+  try {
+    const res  = await fetch(API_URL + '?type=notes&complaint_id=' + encodeURIComponent(complaintId));
+    const data = await res.json();
+    _currentComplaintNotes = data.notes || [];
+  } catch (err) {
+    console.warn('Could not load notes.', err);
+  }
+  renderCaseNotes();
+}
+
+// Saves a new note to DB
+async function addNote(complaintId, content) {
+  const user = window.CURRENT_USER || {};
+  const optimistic = {
+    id:          null,
+    author:      user.name || 'Unknown',
+    author_role: user.role || '',
+    content,
+    created_at:  new Date().toISOString().slice(0,19).replace('T',' '),
+  };
+
+  _currentComplaintNotes.push(optimistic);
+  renderCaseNotes();
+
+  try {
+    const res    = await fetch(API_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        action:       'add_note',
+        complaint_id: complaintId,
+        content,
+        author:       optimistic.author,
+        author_role:  optimistic.author_role,
+        barangay_id:  user.barangay_id || null,
+      }),
+    });
+    const result = await res.json();
+    if (result.success) {
+      const idx = _currentComplaintNotes.indexOf(optimistic);
+      if (idx !== -1) _currentComplaintNotes[idx] = { ...optimistic, id: result.id, created_at: result.created_at };
+      renderCaseNotes();
+    }
+  } catch (err) {
+    console.warn('Note save failed.', err);
+    _currentComplaintNotes = _currentComplaintNotes.filter(n => n !== optimistic);
+    renderCaseNotes();
+  }
+}
+
+// Deletes a note from DB
+async function deleteNote(noteId) {
+  if (!confirm('Delete this note?')) return;
+  _currentComplaintNotes = _currentComplaintNotes.filter(n => n.id !== noteId);
+  renderCaseNotes();
+  try {
+    await fetch(API_URL, {
+      method:  'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'delete_note', id: noteId }),
+    });
+  } catch (err) {
+    console.warn('Note delete failed.', err);
+    if (_currentComplaintId) await loadNotes(_currentComplaintId);
+  }
+}
+
+// Called when Save Note button is clicked
+async function submitNote() {
+  const ta      = document.getElementById('note-content');
+  const content = (ta ? ta.value : '').trim();
+  if (!content) { alert('Please write something before saving.'); return; }
+
+  const btn = document.getElementById('note-submit-btn');
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+  await addNote(_currentComplaintId, content);
+
+  if (btn) { btn.textContent = 'Save Note'; btn.disabled = false; }
+  if (ta)  ta.value = '';
+  hideNoteForm();
+}
+
+// Shows the note input form
+function showNoteForm() {
+  const form = document.getElementById('note-form');
+  if (form) form.style.display = 'block';
+  const ta = document.getElementById('note-content');
+  if (ta) { ta.value = ''; ta.focus(); }
+}
+
+// Hides and clears the note input form
+function hideNoteForm() {
+  const form = document.getElementById('note-form');
+  if (form) form.style.display = 'none';
+  const ta = document.getElementById('note-content');
+  if (ta) ta.value = '';
+}
+
+// Draws the notes list on screen
+function renderCaseNotes() {
+  const el = document.getElementById('case-notes');
+  if (!el) return;
+
+  if (_currentComplaintNotes.length === 0) {
+    el.innerHTML =
+      '<div class="empty-state" style="padding:20px 0;">' +
+        '<div class="empty-icon">📝</div>' +
+        '<div class="empty-title">No notes yet</div>' +
+        '<div class="empty-desc">Add a note to begin tracking case progress.</div>' +
+      '</div>';
+    return;
+  }
+
+  el.innerHTML = _currentComplaintNotes.map(function(n) {
+    const initial   = (n.author || '?').charAt(0).toUpperCase();
+    const canDelete = window.CURRENT_USER && n.id !== null;
+    const date      = (function() {
+      try {
+        const d = new Date(n.created_at.replace(' ','T'));
+        return d.toLocaleDateString('en-PH',{ month:'short', day:'numeric' }) + ' · ' +
+               d.toLocaleTimeString('en-PH',{ hour:'2-digit', minute:'2-digit' });
+      } catch(e) { return n.created_at; }
+    })();
+
+    return (
+      '<div style="padding:12px 0;border-bottom:1px solid var(--border);">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<div style="width:28px;height:28px;border-radius:50%;background:var(--sky-light);color:var(--blue);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">' + initial + '</div>' +
+            '<span style="font-size:12px;font-weight:600;">' + n.author + '</span>' +
+            (n.author_role ? '<span class="badge b-gray" style="font-size:9px;">' + n.author_role + '</span>' : '') +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<span style="font-size:10px;color:var(--text3);">' + date + '</span>' +
+            (canDelete ? '<span style="cursor:pointer;font-size:12px;color:var(--text3);" onclick="deleteNote(' + n.id + ')">✕</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:13px;color:var(--text2);line-height:1.65;padding-left:36px;white-space:pre-wrap;">' + n.content + '</div>' +
+      '</div>'
+    );
+  }).join('');
+}
 /* ══════════════════════════════════════════════════════
    COMPLAINT DETAIL VIEW
 ══════════════════════════════════════════════════════ */
-function viewComplaint(id) {
+async function viewComplaint(id) {
   const c = complaints.find(x => x.id === id);
   if (!c) return;
 
@@ -287,7 +442,8 @@ function viewComplaint(id) {
   renderDetailNlpBars(c);
   renderDetailAhp(c);
   renderDetailTimeline(c);
-  renderCaseNotes();
+  hideNoteForm();
+  await loadNotes(id);  
 
   showScreen('complaint-detail', null);
   document.getElementById('topbar-title').textContent = id + ' – ' + c.category;

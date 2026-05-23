@@ -234,30 +234,31 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-header">
-          <div class="card-title">Case Notes</div>
-          <button class="btn btn-ghost btn-sm">+ Add Note</button>
+  <div class="card-header">
+    <div class="card-title">Case Notes</div>
+    <!-- Button must call showNoteForm() -->
+    <button class="btn btn-ghost btn-sm" onclick="showNoteForm()">+ Add Note</button>
+  </div>
+
+  <!-- Notes appear here -->
+  <div class="card-body" id="case-notes"></div>
+
+  <!-- Input form — hidden until button is clicked -->
+  <div id="note-form" style="display:none; padding: 0 16px 16px;">
+    <div style="border-top: 1px solid var(--border); padding-top: 12px;">
+      <textarea
+        class="inp ta"
+        id="note-content"
+        placeholder="Type your note here…"
+        style="min-height: 80px; margin-bottom: 8px;"
+      ></textarea>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+          <button class="btn btn-secondary btn-sm" onclick="hideNoteForm()">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="note-submit-btn" onclick="submitNote()">Save Note</button>
         </div>
-        <div class="card-body" id="case-notes"></div>
       </div>
     </div>
-    <div>
-      <!-- Fuzzy AHP priority with real weights -->
-      <div class="card" style="margin-bottom:14px;">
-        <div class="card-header"><div class="card-title">⚡ Fuzzy AHP Priority</div></div>
-        <div class="card-body">
-          <div class="priority-score">
-            <div class="score-num medium" id="detail-score-num">—</div>
-            <div style="margin-top:8px;"><span class="badge b-gray" id="detail-priority-badge" style="font-size:12px;padding:4px 12px;">Pending</span></div>
-          </div>
-          <hr class="divider">
-          <div id="ahp-criteria"></div>
-          <!-- Fuzzy AHP weight legend -->
-          <div style="margin-top:12px;font-size:10px;color:var(--text3);line-height:1.7;">
-            Weights: Severity (35%) · Urgency (30%) · Frequency (20%) · Affected (15%)
-          </div>
-        </div>
-      </div>
+  </div>
       <div class="card">
         <div class="card-header"><div class="card-title">Case Timeline</div></div>
         <div class="card-body" id="detail-timeline">

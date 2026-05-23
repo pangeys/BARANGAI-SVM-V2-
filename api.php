@@ -122,7 +122,71 @@ if ($method === 'GET' && $type === 'init') {
         'nextId'        => $nextId,
     ]);
 }
+/* ════════════════════════════════════════════════════
+   GET — notes for a complaint
+════════════════════════════════════════════════════ */
+if ($method === 'GET' && $type === 'notes') {
+    $complaint_id = $_GET['complaint_id'] ?? '';
+    $stmt = $conn->prepare(
+        "SELECT id, complaint_id, author, author_role, content, created_at
+         FROM case_notes WHERE complaint_id = ? ORDER BY created_at ASC"
+    );
+    $stmt->bind_param('s', $complaint_id);
+    $stmt->execute();
+    $r = $stmt->get_result();
+    $notes = [];
+    while ($row = $r->fetch_assoc()) $notes[] = $row;
+    $stmt->close();
+    respond(['notes' => $notes]);
+}
 
+/* ════════════════════════════════════════════════════
+   POST — add_note
+════════════════════════════════════════════════════ */
+if ($method === 'POST' && $action === 'add_note') {
+    $complaint_id = (string)($body['complaint_id'] ?? '');
+    $author       = (string)($body['author']       ?? 'Unknown');
+    $author_role  = (string)($body['author_role']  ?? '');
+    $content      = (string)($body['content']      ?? '');
+    $bid          = $barangay_id > 0 ? $barangay_id : null;
+
+    $stmt = $conn->prepare(
+        "INSERT INTO case_notes (complaint_id, author, author_role, content, barangay_id)
+         VALUES (?, ?, ?, ?, ?)"
+    );
+    $stmt->bind_param('ssssi', $complaint_id, $author, $author_role, $content, $bid);
+    $ok = $stmt->execute();
+    $newId = $conn->insert_id;
+    $stmt->close();
+    respond(['success' => (bool)$ok, 'id' => $newId, 'created_at' => date('Y-m-d H:i:s')]);
+}
+
+/* ════════════════════════════════════════════════════
+   POST — edit_note
+════════════════════════════════════════════════════ */
+if ($method === 'POST' && $action === 'edit_note') {
+    $id      = (int)($body['id']      ?? 0);
+    $content = (string)($body['content'] ?? '');
+
+    $stmt = $conn->prepare("UPDATE case_notes SET content = ? WHERE id = ?");
+    $stmt->bind_param('si', $content, $id);
+    $ok = $stmt->execute();
+    $stmt->close();
+    respond(['success' => (bool)$ok]);
+}
+
+/* ════════════════════════════════════════════════════
+   POST — delete_note
+════════════════════════════════════════════════════ */
+if ($method === 'POST' && $action === 'delete_note') {
+    $id = (int)($body['id'] ?? 0);
+
+    $stmt = $conn->prepare("DELETE FROM case_notes WHERE id = ?");
+    $stmt->bind_param('i', $id);
+    $ok = $stmt->execute();
+    $stmt->close();
+    respond(['success' => (bool)$ok]);
+}
 /* ════════════════════════════════════════════════════
    POST — add_complaint  (tags with admin's barangay)
 ════════════════════════════════════════════════════ */
@@ -215,7 +279,6 @@ if ($method === 'POST' && $action === 'mark_read') {
     }
     respond(["success" => true]);
 }
-
 /* ════════════════════════════════════════════════════
    PUT — update_status  (only own barangay's complaints)
 ════════════════════════════════════════════════════ */
