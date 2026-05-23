@@ -3,12 +3,12 @@
    Core application logic: navigation, modals, complaints
    store, wizard flow, and boot sequence.
 
-   Changes from original:
-     • complaints[], notifStore[], nextId are loaded from
-       MySQL via api.php on every page load.
-     • addComplaint(), resolveComplaint(), advanceStatus(),
-       pushNotif() all sync to the DB automatically.
-     • Full in-memory fallback if api.php is unreachable.
+   Notes-feature changes from previous version:
+     • editNote(id)      — new function: inline edit a note
+     • saveNoteEdit(id)  — new function: persist edit to DB + UI
+     • cancelNoteEdit(id)— new function: discard edit, restore text
+     • deleteNote()      — FIX: now sends DELETE (was POST)
+     • renderCaseNotes() — now renders Edit pencil + inline textarea
 
    Depends on: data.js, classifier.js, render.js, dataset.js
 
@@ -43,7 +43,7 @@ async function loadFromDB() {
       time:   n.time,
       unread: n.isRead ? false : true,
     }));
-    nextId     = parseInt(data.nextId) || 1;
+    nextId = parseInt(data.nextId) || 1;
 
     console.log('BICTS: Loaded from DB —', complaints.length, 'complaints,', notifStore.length, 'notifications.');
   } catch (err) {
@@ -58,7 +58,7 @@ async function loadFromDB() {
   renderNotifs();
 }
 
-/* ── Add a new complaint (saves to DB, updates local cache) ── */
+/* ── Add a new complaint ── */
 async function addComplaint(data) {
   const dateFiled = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
 
@@ -92,7 +92,7 @@ async function addComplaint(data) {
   return complaints[0];
 }
 
-/* ── Resolve a complaint (updates DB + local cache) ── */
+/* ── Resolve a complaint ── */
 async function resolveComplaint(id) {
   const c = complaints.find(x => x.id === id);
   if (!c || c.status === 'Resolved') return;
@@ -158,7 +158,7 @@ async function advanceStatus(id) {
   }
 }
 
-/* ── Push a notification (saves to DB + local cache) ── */
+/* ── Push a notification ── */
 async function pushNotif(msg, type) {
   const time = new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
   notifStore.unshift({ msg, type, time, unread: true });
@@ -231,38 +231,44 @@ function doLogin() {
 function doLogout() {
   fetch('api/auth.php?action=logout').finally(() => location.href = 'login.html');
 }
+
+
 /* ══════════════════════════════════════════════════════
-   NOTES DETAIL VIEW
-══════════════════════════════════════════════════════ */
-/* ══════════════════════════════════════════════════════
-   CASE NOTES
+   CASE NOTES — full CRUD
+   State:
+     _currentComplaintNotes  — array of note objects for the open complaint
+     _currentComplaintId     — complaint_id string of the open complaint
 ══════════════════════════════════════════════════════ */
 let _currentComplaintNotes = [];
 let _currentComplaintId    = null;
 
-// Loads notes from DB for a specific complaint
+/* ─── Load notes from DB for a complaint ─────────────── */
 async function loadNotes(complaintId) {
   _currentComplaintId    = complaintId;
   _currentComplaintNotes = [];
+
   try {
     const res  = await fetch(API_URL + '?type=notes&complaint_id=' + encodeURIComponent(complaintId));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     _currentComplaintNotes = data.notes || [];
   } catch (err) {
-    console.warn('Could not load notes.', err);
+    console.warn('BICTS: Could not load notes.', err);
   }
+
   renderCaseNotes();
 }
 
-// Saves a new note to DB
+/* ─── ADD note ───────────────────────────────────────── */
 async function addNote(complaintId, content) {
-  const user = window.CURRENT_USER || {};
+  const user       = window.CURRENT_USER || {};
   const optimistic = {
-    id:          null,
-    author:      user.name || 'Unknown',
-    author_role: user.role || '',
+    id:          null,           // filled in after server confirms
+    author:      user.name  || 'Unknown',
+    author_role: user.role  || '',
     content,
-    created_at:  new Date().toISOString().slice(0,19).replace('T',' '),
+    created_at:  new Date().toISOString().slice(0, 19).replace('T', ' '),
+    updated_at:  new Date().toISOString().slice(0, 19).replace('T', ' '),
   };
 
   _currentComplaintNotes.push(optimistic);
@@ -284,34 +290,132 @@ async function addNote(complaintId, content) {
     const result = await res.json();
     if (result.success) {
       const idx = _currentComplaintNotes.indexOf(optimistic);
-      if (idx !== -1) _currentComplaintNotes[idx] = { ...optimistic, id: result.id, created_at: result.created_at };
+      if (idx !== -1) {
+        _currentComplaintNotes[idx] = {
+          ...optimistic,
+          id:         result.id,
+          created_at: result.created_at,
+          updated_at: result.updated_at || result.created_at,
+        };
+      }
       renderCaseNotes();
+    } else {
+      throw new Error(result.error || 'Server returned failure');
     }
   } catch (err) {
-    console.warn('Note save failed.', err);
+    console.warn('BICTS: Note save failed.', err);
+    // Roll back optimistic update
     _currentComplaintNotes = _currentComplaintNotes.filter(n => n !== optimistic);
     renderCaseNotes();
+    alert('Could not save the note. Please try again.');
   }
 }
 
-// Deletes a note from DB
+/* ─── EDIT note — enter edit mode in the UI ─────────── */
+function editNote(noteId) {
+  const note = _currentComplaintNotes.find(n => n.id === noteId);
+  if (!note) return;
+
+  // Swap the static content div for an editable textarea + Save/Cancel buttons
+  const contentEl = document.getElementById('note-content-' + noteId);
+  if (!contentEl) return;
+
+  // Build inline editor HTML
+  contentEl.innerHTML =
+    '<textarea ' +
+      'id="note-edit-ta-' + noteId + '" ' +
+      'class="inp ta" ' +
+      'style="min-height:70px;margin-bottom:6px;font-size:13px;" ' +
+    '>' + _escHtml(note.content) + '</textarea>' +
+    '<div style="display:flex;gap:6px;justify-content:flex-end;">' +
+      '<button class="btn btn-secondary btn-sm" onclick="cancelNoteEdit(' + noteId + ')">Cancel</button>' +
+      '<button class="btn btn-primary btn-sm"   id="note-save-btn-' + noteId + '" ' +
+              'onclick="saveNoteEdit(' + noteId + ')">Save</button>' +
+    '</div>';
+
+  // Focus and place cursor at end
+  const ta = document.getElementById('note-edit-ta-' + noteId);
+  if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = ta.value.length; }
+
+  // Hide the edit/delete action buttons while editing
+  const actionsEl = document.getElementById('note-actions-' + noteId);
+  if (actionsEl) actionsEl.style.display = 'none';
+}
+
+/* ─── SAVE note edit — persist to DB ────────────────── */
+async function saveNoteEdit(noteId) {
+  const ta = document.getElementById('note-edit-ta-' + noteId);
+  if (!ta) return;
+
+  const newContent = ta.value.trim();
+  if (!newContent) { alert('Note cannot be empty.'); ta.focus(); return; }
+
+  const saveBtn = document.getElementById('note-save-btn-' + noteId);
+  if (saveBtn) { saveBtn.textContent = 'Saving…'; saveBtn.disabled = true; }
+
+  try {
+    const res    = await fetch(API_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'edit_note', id: noteId, content: newContent }),
+    });
+    const result = await res.json();
+
+    if (result.success) {
+      // Update local cache
+      const note = _currentComplaintNotes.find(n => n.id === noteId);
+      if (note) {
+        note.content    = newContent;
+        note.updated_at = result.updated_at || new Date().toISOString().slice(0, 19).replace('T', ' ');
+      }
+      renderCaseNotes(); // full re-render exits edit mode cleanly
+    } else {
+      throw new Error(result.error || 'Server returned failure');
+    }
+  } catch (err) {
+    console.warn('BICTS: Note edit failed.', err);
+    if (saveBtn) { saveBtn.textContent = 'Save'; saveBtn.disabled = false; }
+    alert('Could not save the edit. Please try again.');
+  }
+}
+
+/* ─── CANCEL note edit — restore original text ───────── */
+function cancelNoteEdit(noteId) {
+  // Simply re-render — restores the static view from _currentComplaintNotes
+  renderCaseNotes();
+}
+
+/* ─── DELETE note ────────────────────────────────────── */
 async function deleteNote(noteId) {
-  if (!confirm('Delete this note?')) return;
+  if (!confirm('Delete this note? This cannot be undone.')) return;
+
+  // Optimistic removal
+  const removed = _currentComplaintNotes.find(n => n.id === noteId);
   _currentComplaintNotes = _currentComplaintNotes.filter(n => n.id !== noteId);
   renderCaseNotes();
+
   try {
-    await fetch(API_URL, {
-      method:  'DELETE',
+    const res = await fetch(API_URL, {
+      method:  'DELETE',                          // ← FIX: was POST in old version
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ action: 'delete_note', id: noteId }),
     });
+    const result = await res.json();
+
+    if (!result.success) throw new Error(result.error || 'Server returned failure');
   } catch (err) {
-    console.warn('Note delete failed.', err);
-    if (_currentComplaintId) await loadNotes(_currentComplaintId);
+    console.warn('BICTS: Note delete failed.', err);
+    // Roll back: re-insert the removed note and re-render
+    if (removed) {
+      _currentComplaintNotes.push(removed);
+      _currentComplaintNotes.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    }
+    renderCaseNotes();
+    alert('Could not delete the note. Please try again.');
   }
 }
 
-// Called when Save Note button is clicked
+/* ─── Submit new note (called by Save Note button) ────── */
 async function submitNote() {
   const ta      = document.getElementById('note-content');
   const content = (ta ? ta.value : '').trim();
@@ -327,7 +431,7 @@ async function submitNote() {
   hideNoteForm();
 }
 
-// Shows the note input form
+/* ─── Show / hide the new-note form ─────────────────── */
 function showNoteForm() {
   const form = document.getElementById('note-form');
   if (form) form.style.display = 'block';
@@ -343,7 +447,7 @@ function hideNoteForm() {
   if (ta) ta.value = '';
 }
 
-// Draws the notes list on screen
+/* ─── Render the notes list ─────────────────────────── */
 function renderCaseNotes() {
   const el = document.getElementById('case-notes');
   if (!el) return;
@@ -358,35 +462,98 @@ function renderCaseNotes() {
     return;
   }
 
-  el.innerHTML = _currentComplaintNotes.map(function(n) {
-    const initial   = (n.author || '?').charAt(0).toUpperCase();
-    const canDelete = window.CURRENT_USER && n.id !== null;
-    const date      = (function() {
-      try {
-        const d = new Date(n.created_at.replace(' ','T'));
-        return d.toLocaleDateString('en-PH',{ month:'short', day:'numeric' }) + ' · ' +
-               d.toLocaleTimeString('en-PH',{ hour:'2-digit', minute:'2-digit' });
-      } catch(e) { return n.created_at; }
-    })();
+  const currentUserId = (window.CURRENT_USER || {}).id;
+
+  el.innerHTML = _currentComplaintNotes.map(function (n) {
+    const initial = (n.author || '?').charAt(0).toUpperCase();
+
+    /* Format created date */
+    const createdStr = _formatNoteDate(n.created_at);
+
+    /* Show "(edited)" label if updated_at differs meaningfully from created_at */
+    const wasEdited = n.updated_at && n.updated_at !== n.created_at &&
+                      Math.abs(new Date(n.updated_at) - new Date(n.created_at)) > 2000;
+    const editedTag = wasEdited
+      ? '<span style="font-size:10px;color:var(--text3);font-style:italic;"> · edited</span>'
+      : '';
+
+    /* Show action buttons only for notes that are saved (id !== null).
+       Any logged-in user who belongs to this barangay can edit/delete. */
+    const canAct = n.id !== null && window.CURRENT_USER;
 
     return (
-      '<div style="padding:12px 0;border-bottom:1px solid var(--border);">' +
+      '<div style="padding:12px 0;border-bottom:1px solid var(--border);" id="note-row-' + n.id + '">' +
+
+        /* ── Header row ── */
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+
+          /* Left: avatar + author + role */
           '<div style="display:flex;align-items:center;gap:8px;">' +
-            '<div style="width:28px;height:28px;border-radius:50%;background:var(--sky-light);color:var(--blue);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">' + initial + '</div>' +
-            '<span style="font-size:12px;font-weight:600;">' + n.author + '</span>' +
-            (n.author_role ? '<span class="badge b-gray" style="font-size:9px;">' + n.author_role + '</span>' : '') +
+            '<div style="width:28px;height:28px;border-radius:50%;background:var(--sky-light);color:var(--blue);' +
+                 'font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">' +
+              initial +
+            '</div>' +
+            '<span style="font-size:12px;font-weight:600;">' + _escHtml(n.author) + '</span>' +
+            (n.author_role
+              ? '<span class="badge b-gray" style="font-size:9px;">' + _escHtml(n.author_role) + '</span>'
+              : '') +
           '</div>' +
-          '<div style="display:flex;align-items:center;gap:8px;">' +
-            '<span style="font-size:10px;color:var(--text3);">' + date + '</span>' +
-            (canDelete ? '<span style="cursor:pointer;font-size:12px;color:var(--text3);" onclick="deleteNote(' + n.id + ')">✕</span>' : '') +
+
+          /* Right: timestamp + action buttons */
+          '<div style="display:flex;align-items:center;gap:8px;" id="note-actions-' + n.id + '">' +
+            '<span style="font-size:10px;color:var(--text3);">' + createdStr + editedTag + '</span>' +
+            (canAct
+              ? /* Edit button */
+                '<button ' +
+                  'class="btn btn-ghost btn-sm" ' +
+                  'style="padding:2px 7px;font-size:11px;" ' +
+                  'onclick="editNote(' + n.id + ')" ' +
+                  'title="Edit note">✏️</button>' +
+                /* Delete button */
+                '<button ' +
+                  'style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--text3);padding:2px 4px;" ' +
+                  'onclick="deleteNote(' + n.id + ')" ' +
+                  'title="Delete note">✕</button>'
+              : '') +
           '</div>' +
+
         '</div>' +
-        '<div style="font-size:13px;color:var(--text2);line-height:1.65;padding-left:36px;white-space:pre-wrap;">' + n.content + '</div>' +
+
+        /* ── Content area (swapped with textarea in edit mode) ── */
+        '<div ' +
+          'id="note-content-' + n.id + '" ' +
+          'style="font-size:13px;color:var(--text2);line-height:1.65;padding-left:36px;white-space:pre-wrap;">' +
+          _escHtml(n.content) +
+        '</div>' +
+
       '</div>'
     );
   }).join('');
 }
+
+/* ── Tiny XSS-safe HTML escaper used only inside renderCaseNotes ── */
+function _escHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* ── Format a note timestamp for display ── */
+function _formatNoteDate(rawDate) {
+  try {
+    // MySQL returns "2026-05-23 03:25:00" — replace space with T for Safari compat
+    const d = new Date(rawDate.replace(' ', 'T'));
+    return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) +
+           ' · ' +
+           d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    return rawDate || '—';
+  }
+}
+
+
 /* ══════════════════════════════════════════════════════
    COMPLAINT DETAIL VIEW
 ══════════════════════════════════════════════════════ */
@@ -403,7 +570,7 @@ async function viewComplaint(id) {
   const badgeRow = document.getElementById('detail-badge-row');
   if (badgeRow) {
     badgeRow.innerHTML =
-      '<span class="badge b-blue">'   + c.category + '</span>' +
+      '<span class="badge b-blue">'       + c.category + '</span>' +
       '<span class="badge ' + c.pb + '">' + c.priority + ' Priority</span>' +
       '<span class="badge ' + c.sb + '">' + c.status   + '</span>';
   }
@@ -443,11 +610,13 @@ async function viewComplaint(id) {
   renderDetailAhp(c);
   renderDetailTimeline(c);
   hideNoteForm();
-  await loadNotes(id);  
+
+  await loadNotes(id);   // ← loads + renders notes
 
   showScreen('complaint-detail', null);
   document.getElementById('topbar-title').textContent = id + ' – ' + c.category;
 }
+
 
 /* ══════════════════════════════════════════════════════
    MODALS
@@ -468,6 +637,7 @@ function initModalBackdropClose() {
     m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
   });
 }
+
 
 /* ══════════════════════════════════════════════════════
    SUBMIT COMPLAINT WIZARD
@@ -615,6 +785,7 @@ function runAiClassification() {
   ).join('');
 }
 
+
 /* ══════════════════════════════════════════════════════
    FILTER STATE
 ══════════════════════════════════════════════════════ */
@@ -628,6 +799,7 @@ function filterByStatus(status, el) {
 }
 
 function filterComplaints() { renderComplaints(); }
+
 
 /* ══════════════════════════════════════════════════════
    MISC UI INIT
@@ -649,6 +821,7 @@ function initToggles() {
     });
   });
 }
+
 
 /* ══════════════════════════════════════════════════════
    BOOT

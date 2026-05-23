@@ -3,13 +3,21 @@ error_reporting(0);
 ini_set('display_errors', 0);
 
 /* ═══════════════════════════════════════════════════════
-   BICTS — api.php  (SECURED — prepared statements)
-   REST backend for complaints, notifications, ID counter.
-   Filters complaints by the logged-in admin's barangay.
+   BICTS — api.php  (SECURED + NOTES-COMPLETE)
+   REST backend for complaints, notifications, ID counter,
+   and case notes.
 
-   Security change: every query that touches user input now
-   uses mysqli prepared statements (bind_param) instead of
-   string interpolation + esc(). Behaviour is unchanged.
+   Notes-feature changes from previous version:
+     • case_notes table is now the canonical store (no column).
+     • GET  ?type=notes&complaint_id=X  → list notes (unchanged)
+     • POST action=add_note             → create note  (unchanged)
+     • POST action=edit_note            → update note  (unchanged — was missing frontend)
+     • DELETE action=delete_note        → delete note  (BUG FIX: was POST, now DELETE
+                                          to match what app.js sends)
+     • Every note write/delete is also logged to activity_log.
+
+   Security: all user input goes through prepared statements.
+   No string interpolation of untrusted values anywhere.
 ═══════════════════════════════════════════════════════ */
 
 if (session_status() === PHP_SESSION_NONE) session_start();
@@ -21,7 +29,7 @@ define('DB_NAME', 'bicts_db');
 
 header("Content-Type: application/json; charset=utf-8");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
@@ -34,22 +42,40 @@ if ($conn->connect_error) {
     exit;
 }
 
+/* ── helpers ─────────────────────────────────────────── */
 function respond($data, $code = 200) {
     http_response_code($code);
     echo json_encode($data, JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-// get logged-in admin's barangay_id from session
-$barangay_id = 0;
-if (!empty($_SESSION['user']) && $_SESSION['user']['role'] === 'admin') {
-    $barangay_id = (int)$_SESSION['user']['barangay_id'];
+/**
+ * Write one row to activity_log.
+ * Safe: all values are server-generated or already-validated.
+ */
+function logActivity($conn, $userId, $userName, $barangayId, $action, $detail) {
+    $ip   = $_SERVER['REMOTE_ADDR'] ?? '';
+    $stmt = $conn->prepare(
+        "INSERT INTO activity_log (user_id, user_name, barangay_id, action, detail, ip_address)
+         VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    $stmt->bind_param('isisss', $userId, $userName, $barangayId, $action, $detail, $ip);
+    $stmt->execute();
+    $stmt->close();
 }
 
+/* ── session context ─────────────────────────────────── */
+$sessionUser = $_SESSION['user'] ?? [];
+$barangay_id = isset($sessionUser['barangay_id']) ? (int)$sessionUser['barangay_id'] : 0;
+$userId      = isset($sessionUser['id'])          ? (int)$sessionUser['id']          : 0;
+$userName    = $sessionUser['name']               ?? 'Unknown';
+
+/* ── request parsing ─────────────────────────────────── */
 $method = $_SERVER['REQUEST_METHOD'];
 $type   = $_GET['type'] ?? '';
 $body   = json_decode(file_get_contents("php://input"), true) ?? [];
 $action = $body['action'] ?? '';
+
 
 /* ════════════════════════════════════════════════════
    GET api.php?type=init
@@ -57,13 +83,14 @@ $action = $body['action'] ?? '';
 ════════════════════════════════════════════════════ */
 if ($method === 'GET' && $type === 'init') {
 
-    // fetch complaints filtered by barangay
+    // complaints filtered by barangay
     $complaints = [];
     if ($barangay_id > 0) {
         $stmt = $conn->prepare("SELECT * FROM complaints WHERE barangay_id = ? ORDER BY created_at DESC");
         $stmt->bind_param('i', $barangay_id);
         $stmt->execute();
         $r = $stmt->get_result();
+        $stmt->close();
     } else {
         // no session — return all (fallback for dev/testing)
         $r = $conn->query("SELECT * FROM complaints ORDER BY created_at DESC");
@@ -90,7 +117,6 @@ if ($method === 'GET' && $type === 'init') {
             'barangay_id' => intval($row['barangay_id']),
         ];
     }
-    if (isset($stmt)) { $stmt->close(); unset($stmt); }
 
     // notifications filtered by barangay
     $notifs = [];
@@ -99,6 +125,7 @@ if ($method === 'GET' && $type === 'init') {
         $stmt->bind_param('i', $barangay_id);
         $stmt->execute();
         $r2 = $stmt->get_result();
+        $stmt->close();
     } else {
         $r2 = $conn->query("SELECT * FROM notifications ORDER BY created_at DESC");
     }
@@ -110,7 +137,6 @@ if ($method === 'GET' && $type === 'init') {
             'isRead' => intval($row['is_read'] ?? 0),
         ];
     }
-    if (isset($stmt)) { $stmt->close(); unset($stmt); }
 
     // next complaint ID
     $r3     = $conn->query("SELECT next_id FROM id_counter WHERE id = 1");
@@ -122,78 +148,180 @@ if ($method === 'GET' && $type === 'init') {
         'nextId'        => $nextId,
     ]);
 }
+
+
 /* ════════════════════════════════════════════════════
-   GET — notes for a complaint
+   GET api.php?type=notes&complaint_id=X
+   Returns all notes for one complaint, ordered oldest→newest.
+   Scoped to the logged-in admin's barangay when possible.
 ════════════════════════════════════════════════════ */
 if ($method === 'GET' && $type === 'notes') {
-    $complaint_id = $_GET['complaint_id'] ?? '';
-    $stmt = $conn->prepare(
-        "SELECT id, complaint_id, author, author_role, content, created_at
-         FROM case_notes WHERE complaint_id = ? ORDER BY created_at ASC"
-    );
-    $stmt->bind_param('s', $complaint_id);
+    $complaint_id = trim($_GET['complaint_id'] ?? '');
+
+    if ($complaint_id === '') {
+        respond(['error' => 'complaint_id required'], 400);
+    }
+
+    if ($barangay_id > 0) {
+        // Extra safety: only return notes whose parent complaint belongs to this barangay
+        $stmt = $conn->prepare(
+            "SELECT n.id, n.complaint_id, n.author, n.author_role,
+                    n.content, n.created_at, n.updated_at
+             FROM   case_notes n
+             INNER JOIN complaints c ON c.complaint_id = n.complaint_id
+             WHERE  n.complaint_id = ?
+               AND  c.barangay_id  = ?
+             ORDER BY n.created_at ASC"
+        );
+        $stmt->bind_param('si', $complaint_id, $barangay_id);
+    } else {
+        $stmt = $conn->prepare(
+            "SELECT id, complaint_id, author, author_role,
+                    content, created_at, updated_at
+             FROM   case_notes
+             WHERE  complaint_id = ?
+             ORDER BY created_at ASC"
+        );
+        $stmt->bind_param('s', $complaint_id);
+    }
+
     $stmt->execute();
-    $r = $stmt->get_result();
+    $r     = $stmt->get_result();
     $notes = [];
     while ($row = $r->fetch_assoc()) $notes[] = $row;
     $stmt->close();
+
     respond(['notes' => $notes]);
 }
 
+
 /* ════════════════════════════════════════════════════
-   POST — add_note
+   POST action=add_note
 ════════════════════════════════════════════════════ */
 if ($method === 'POST' && $action === 'add_note') {
-    $complaint_id = (string)($body['complaint_id'] ?? '');
-    $author       = (string)($body['author']       ?? 'Unknown');
-    $author_role  = (string)($body['author_role']  ?? '');
-    $content      = (string)($body['content']      ?? '');
+    $complaint_id = trim((string)($body['complaint_id'] ?? ''));
+    $content      = trim((string)($body['content']      ?? ''));
+    $author       = trim((string)($body['author']       ?? 'Unknown'));
+    $author_role  = trim((string)($body['author_role']  ?? ''));
     $bid          = $barangay_id > 0 ? $barangay_id : null;
+
+    if ($complaint_id === '' || $content === '') {
+        respond(['success' => false, 'error' => 'complaint_id and content are required'], 400);
+    }
 
     $stmt = $conn->prepare(
         "INSERT INTO case_notes (complaint_id, author, author_role, content, barangay_id)
          VALUES (?, ?, ?, ?, ?)"
     );
     $stmt->bind_param('ssssi', $complaint_id, $author, $author_role, $content, $bid);
-    $ok = $stmt->execute();
+    $ok    = $stmt->execute();
     $newId = $conn->insert_id;
+    $createdAt = date('Y-m-d H:i:s');
     $stmt->close();
-    respond(['success' => (bool)$ok, 'id' => $newId, 'created_at' => date('Y-m-d H:i:s')]);
+
+    if ($ok) {
+        logActivity($conn, $userId, $userName, $barangay_id,
+            'note_added', "Note #$newId added to complaint $complaint_id");
+    }
+
+    respond([
+        'success'    => (bool)$ok,
+        'id'         => $newId,
+        'created_at' => $createdAt,
+        'updated_at' => $createdAt,
+    ]);
 }
 
+
 /* ════════════════════════════════════════════════════
-   POST — edit_note
+   POST action=edit_note
+   Allows editing content of an existing note.
+   Scoped: can only edit a note that belongs to this admin's
+   barangay (verified via JOIN to complaints).
 ════════════════════════════════════════════════════ */
 if ($method === 'POST' && $action === 'edit_note') {
     $id      = (int)($body['id']      ?? 0);
-    $content = (string)($body['content'] ?? '');
+    $content = trim((string)($body['content'] ?? ''));
 
-    $stmt = $conn->prepare("UPDATE case_notes SET content = ? WHERE id = ?");
-    $stmt->bind_param('si', $content, $id);
+    if ($id === 0 || $content === '') {
+        respond(['success' => false, 'error' => 'id and content are required'], 400);
+    }
+
+    if ($barangay_id > 0) {
+        // Only edit if the parent complaint belongs to this barangay
+        $stmt = $conn->prepare(
+            "UPDATE case_notes n
+             INNER JOIN complaints c ON c.complaint_id = n.complaint_id
+             SET n.content = ?
+             WHERE n.id = ? AND c.barangay_id = ?"
+        );
+        $stmt->bind_param('sii', $content, $id, $barangay_id);
+    } else {
+        $stmt = $conn->prepare("UPDATE case_notes SET content = ? WHERE id = ?");
+        $stmt->bind_param('si', $content, $id);
+    }
+
     $ok = $stmt->execute();
+    $affected = $stmt->affected_rows;
     $stmt->close();
-    respond(['success' => (bool)$ok]);
+
+    if ($ok && $affected > 0) {
+        logActivity($conn, $userId, $userName, $barangay_id,
+            'note_edited', "Note #$id updated");
+    }
+
+    respond([
+        'success'    => $ok && $affected > 0,
+        'updated_at' => date('Y-m-d H:i:s'),
+    ]);
 }
 
+
 /* ════════════════════════════════════════════════════
-   POST — delete_note
+   DELETE action=delete_note
+   BUG FIX: was POST in the previous version; app.js sends DELETE.
+   Scoped: can only delete a note that belongs to this admin's
+   barangay (verified via JOIN to complaints).
 ════════════════════════════════════════════════════ */
-if ($method === 'POST' && $action === 'delete_note') {
+if ($method === 'DELETE' && $action === 'delete_note') {
     $id = (int)($body['id'] ?? 0);
 
-    $stmt = $conn->prepare("DELETE FROM case_notes WHERE id = ?");
-    $stmt->bind_param('i', $id);
-    $ok = $stmt->execute();
+    if ($id === 0) {
+        respond(['success' => false, 'error' => 'id required'], 400);
+    }
+
+    if ($barangay_id > 0) {
+        $stmt = $conn->prepare(
+            "DELETE n FROM case_notes n
+             INNER JOIN complaints c ON c.complaint_id = n.complaint_id
+             WHERE n.id = ? AND c.barangay_id = ?"
+        );
+        $stmt->bind_param('ii', $id, $barangay_id);
+    } else {
+        $stmt = $conn->prepare("DELETE FROM case_notes WHERE id = ?");
+        $stmt->bind_param('i', $id);
+    }
+
+    $ok       = $stmt->execute();
+    $affected = $stmt->affected_rows;
     $stmt->close();
-    respond(['success' => (bool)$ok]);
+
+    if ($ok && $affected > 0) {
+        logActivity($conn, $userId, $userName, $barangay_id,
+            'note_deleted', "Note #$id deleted");
+    }
+
+    respond(['success' => $ok && $affected > 0]);
 }
+
+
 /* ════════════════════════════════════════════════════
-   POST — add_complaint  (tags with admin's barangay)
+   POST action=add_complaint  (tags with admin's barangay)
 ════════════════════════════════════════════════════ */
 if ($method === 'POST' && $action === 'add_complaint') {
     $d = $body['data'] ?? [];
 
-    // atomically get + increment the ID counter
+    // Atomically get + increment the ID counter
     $conn->begin_transaction();
     $conn->query("UPDATE id_counter SET next_id = next_id + 1 WHERE id = 1");
     $r      = $conn->query("SELECT next_id FROM id_counter WHERE id = 1");
@@ -219,9 +347,7 @@ if ($method === 'POST' && $action === 'add_complaint') {
     $officer   = (string)($d['officer']     ?? '—');
     $status    = (string)($d['status']      ?? 'Open');
     $sb        = (string)($d['sb']          ?? 'b-gray');
-
-    // barangay_id: bind a real value, or NULL when there's no session
-    $bid = $barangay_id > 0 ? $barangay_id : null;
+    $bid       = $barangay_id > 0 ? $barangay_id : null;
 
     $sql = "INSERT INTO complaints
               (complaint_id, date_filed, description, location,
@@ -242,15 +368,13 @@ if ($method === 'POST' && $action === 'add_complaint') {
     $ok = $stmt->execute();
     $stmt->close();
 
-    if ($ok) {
-        respond(["success" => true, "id" => $cid]);
-    } else {
-        respond(["success" => false, "error" => $conn->error], 500);
-    }
+    if ($ok) respond(["success" => true, "id" => $cid]);
+    else     respond(["success" => false, "error" => $conn->error], 500);
 }
 
+
 /* ════════════════════════════════════════════════════
-   POST — add_notification  (tags with admin's barangay)
+   POST action=add_notification
 ════════════════════════════════════════════════════ */
 if ($method === 'POST' && $action === 'add_notification') {
     $msg   = (string)($body['msg']        ?? '');
@@ -265,8 +389,9 @@ if ($method === 'POST' && $action === 'add_notification') {
     respond(["success" => true]);
 }
 
+
 /* ════════════════════════════════════════════════════
-   POST — mark_read  (marks THIS barangay's notifications read)
+   POST action=mark_read
 ════════════════════════════════════════════════════ */
 if ($method === 'POST' && $action === 'mark_read') {
     if ($barangay_id > 0) {
@@ -279,8 +404,10 @@ if ($method === 'POST' && $action === 'mark_read') {
     }
     respond(["success" => true]);
 }
+
+
 /* ════════════════════════════════════════════════════
-   PUT — update_status  (only own barangay's complaints)
+   PUT action=update_status
 ════════════════════════════════════════════════════ */
 if ($method === 'PUT' && $action === 'update_status') {
     $id         = (string)($body['id']          ?? '');
@@ -307,5 +434,6 @@ if ($method === 'PUT' && $action === 'update_status') {
     $stmt->close();
     respond(["success" => (bool)$ok]);
 }
+
 
 respond(["error" => "Unknown request"], 400);
