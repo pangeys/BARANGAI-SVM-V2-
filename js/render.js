@@ -351,13 +351,8 @@ function renderIsoEval() {
 }
 
 /* ══════════════════════════════════════════════════════
-   USERS / NOTIFICATIONS / SETTINGS
+   NOTIFICATIONS / SETTINGS
 ══════════════════════════════════════════════════════ */
-function renderUsers() {
-  const el = document.getElementById('users-tbody');
-  if (el) el.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text3);font-size:12px;">No users added yet.</td></tr>';
-}
-
 function renderNotifs() {
   const el = document.getElementById('notifs-list');
   if (!el) return;
@@ -491,4 +486,196 @@ function downloadReportPDF(title) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   USERS MANAGEMENT + MY ACCOUNT
+   Backend: api/profile.php
+═══════════════════════════════════════════════════════════ */
+
+const PROFILE_API = 'api/profile.php';
+
+async function profileCall(action, body = null, method = 'POST') {
+  const opts = { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include' };
+  if (body) opts.body = JSON.stringify({ action, ...body });
+  const url = method === 'GET' ? PROFILE_API + '?action=' + action : PROFILE_API;
+  const res = await fetch(url, opts);
+  return res.json();
+}
+
+function fmtLogin(val) {
+  if (!val) return '<span style="color:var(--text3)">Never</span>';
+  const d = new Date(String(val).replace(' ', 'T'));
+  return isNaN(d) ? val : d.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function roleBadge(role) {
+  const cls = role === 'admin' ? 'b-blue' : role === 'staff' ? 'b-green' : 'b-gray';
+  return '<span class="badge ' + cls + '">' + role + '</span>';
+}
+function statusBadgeUser(status) {
+  const cls = status === 'active' ? 'b-green' : 'b-red';
+  return '<span class="badge ' + cls + '">' + (status || 'active') + '</span>';
+}
+
+/* ── Tab switcher for the Users screen ── */
+let _usersTab = 'users';
+function switchUsersTab(tab, el) {
+  _usersTab = tab;
+  document.querySelectorAll('#users-tabs .tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  const up = document.getElementById('users-panel');
+  const ap = document.getElementById('audit-panel');
+  const sp = document.getElementById('stats-panel');
+  if (up) up.style.display = tab === 'users' ? '' : 'none';
+  if (ap) ap.style.display = tab === 'audit' ? '' : 'none';
+  if (sp) sp.style.display = tab === 'stats' ? '' : 'none';
+  if (tab === 'users') loadUsers();
+  if (tab === 'audit') loadAuditLog();
+  if (tab === 'stats') loadStaffStats();
+}
+
+/* ── 1. USER LIST (this replaces the old renderUsers placeholder) ── */
+async function renderUsers() { loadUsers(); }   /* called by boot sequence */
+
+async function loadUsers() {
+  const tbody = document.getElementById('users-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">Loading…</td></tr>';
+  const r = await profileCall('list_users', null, 'GET');
+  if (!r.ok) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">' + (r.error || 'Could not load users.') + '</td></tr>';
+    return;
+  }
+  if (!r.users.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">No users found.</td></tr>';
+    return;
+  }
+  const myId = (window.CURRENT_USER && window.CURRENT_USER.id) || 0;
+  tbody.innerHTML = r.users.map(u => {
+    const isMe = Number(u.id) === Number(myId);
+    return '<tr>' +
+      '<td style="font-weight:500">' + (u.full_name || '—') + (isMe ? ' <span style="font-size:10px;color:var(--text3)">(you)</span>' : '') + '</td>' +
+      '<td style="font-size:11px;color:var(--text3)">' + (u.email || '—') + '</td>' +
+      '<td>' + roleBadge(u.role) + '</td>' +
+      '<td>' + statusBadgeUser(u.status) + '</td>' +
+      '<td style="font-size:11px">' + fmtLogin(u.last_login) + '</td>' +
+      '<td style="text-align:right;white-space:nowrap">' +
+        (isMe ? '' :
+          '<button class="btn btn-ghost btn-sm" onclick="cycleUserRole(' + u.id + ',\'' + u.role + '\')">Role</button> ' +
+          '<button class="btn btn-ghost btn-sm" onclick="toggleUserStatus(' + u.id + ',\'' + u.status + '\')">' +
+            (u.status === 'active' ? 'Disable' : 'Enable') + '</button>'
+        ) +
+      '</td></tr>';
+  }).join('');
+}
+
+/* role cycles admin → staff → viewer → admin */
+async function cycleUserRole(id, current) {
+  const order = ['admin','staff','viewer'];
+  const next  = order[(order.indexOf(current) + 1) % order.length];
+  const r = await profileCall('update_user', { id, role: next });
+  if (!r.ok) { alert(r.error || 'Update failed.'); return; }
+  loadUsers();
+}
+async function toggleUserStatus(id, current) {
+  const next = current === 'active' ? 'disabled' : 'active';
+  const r = await profileCall('update_user', { id, status: next });
+  if (!r.ok) { alert(r.error || 'Update failed.'); return; }
+  loadUsers();
+}
+
+/* ── Add user (uses the modal in index.html) ── */
+function openAddUser()  { const m = document.getElementById('addUserModal'); if (m) m.classList.add('open'); }
+function closeAddUser() { const m = document.getElementById('addUserModal'); if (m) m.classList.remove('open'); }
+async function submitAddUser() {
+  const body = {
+    full_name: document.getElementById('au_name').value.trim(),
+    email:     document.getElementById('au_email').value.trim(),
+    username:  document.getElementById('au_username').value.trim(),
+    role:      document.getElementById('au_role').value,
+    password:  document.getElementById('au_pw').value,
+  };
+  const msg = document.getElementById('au_msg');
+  msg.textContent = '';
+  const r = await profileCall('create_user', body);
+  if (!r.ok) { msg.style.color = 'var(--red)'; msg.textContent = r.error || 'Could not create user.'; return; }
+  closeAddUser();
+  ['au_name','au_email','au_username','au_pw'].forEach(id => document.getElementById(id).value = '');
+  loadUsers();
+}
+
+/* ── 2. ACTIVITY LOG ── */
+async function loadAuditLog() {
+  const tbody = document.getElementById('audit-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">Loading…</td></tr>';
+  const r = await profileCall('activity_log', null, 'GET');
+  if (!r.ok)         { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">' + (r.error || 'Could not load log.') + '</td></tr>'; return; }
+  if (!r.log.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">No activity recorded yet.</td></tr>'; return; }
+  tbody.innerHTML = r.log.map(a =>
+    '<tr>' +
+    '<td style="font-size:11px;color:var(--text3);white-space:nowrap">' + fmtLogin(a.created_at) + '</td>' +
+    '<td style="font-size:11px;font-weight:500">' + (a.user_name || '—') + '</td>' +
+    '<td><span class="badge b-gray" style="font-size:9px">' + a.action + '</span></td>' +
+    '<td style="font-size:11px">' + (a.detail || '') + '</td>' +
+    '</tr>'
+  ).join('');
+}
+
+/* ── 3. STAFF STATS ── */
+async function loadStaffStats() {
+  const tbody = document.getElementById('stats-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">Loading…</td></tr>';
+  const r = await profileCall('staff_stats', null, 'GET');
+  if (!r.ok)           { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">' + (r.error || 'Could not load stats.') + '</td></tr>'; return; }
+  if (!r.stats.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">No staff data yet.</td></tr>'; return; }
+  tbody.innerHTML = r.stats.map(s => {
+    const total = Number(s.total_cases) || 0;
+    const res   = Number(s.resolved_cases) || 0;
+    const rate  = total ? Math.round((res / total) * 100) : 0;
+    return '<tr>' +
+      '<td style="font-weight:500">' + (s.full_name || '—') + ' ' + roleBadge(s.role) + '</td>' +
+      '<td style="font-family:var(--mono);text-align:center">' + total + '</td>' +
+      '<td style="font-family:var(--mono);text-align:center">' + res + '</td>' +
+      '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:8px">' +
+        '<div class="progress" style="flex:1"><div class="progress-fill" style="width:' + rate + '%"></div></div>' +
+        '<span style="font-family:var(--mono);font-size:11px">' + rate + '%</span></div></td>' +
+      '</tr>';
+  }).join('');
+}
+
+/* ── MY ACCOUNT (profile icon in the topbar) ── */
+async function openMyAccount() {
+  const r = await profileCall('get_profile', null, 'GET');
+  if (!r.ok) { alert(r.error || 'Could not load profile.'); return; }
+  const p = r.profile;
+  document.getElementById('ma_name').value  = p.full_name || '';
+  document.getElementById('ma_email').value = p.email     || '';
+  document.getElementById('ma_phone').value = p.phone     || '';
+  document.getElementById('ma_addr').value  = p.address   || '';
+  document.getElementById('ma_role').value  = p.role === 'admin' ? 'Administrator' : (p.role || '');
+  document.getElementById('ma_last').textContent  = fmtLogin(p.last_login);
+  document.getElementById('ma_count').textContent = (p.login_count || 0) + ' logins';
+  document.getElementById('ma_pw').value = '';
+  document.getElementById('ma_msg').textContent = '';
+  document.getElementById('myAccountModal').classList.add('open');
+}
+function closeMyAccount() { document.getElementById('myAccountModal').classList.remove('open'); }
+async function saveMyAccount() {
+  const body = {
+    full_name: document.getElementById('ma_name').value.trim(),
+    email:     document.getElementById('ma_email').value.trim(),
+    phone:     document.getElementById('ma_phone').value.trim(),
+    address:   document.getElementById('ma_addr').value.trim(),
+    password:  document.getElementById('ma_pw').value || '',
+  };
+  const msg = document.getElementById('ma_msg');
+  msg.textContent = '';
+  const r = await profileCall('update_profile', body);
+  if (!r.ok) { msg.style.color = 'var(--red)'; msg.textContent = r.error || 'Could not save.'; return; }
+  msg.style.color = 'var(--green)'; msg.textContent = 'Saved.';
+  const nameEl = document.querySelector('#sidebar-user .user-name');
+  if (nameEl && r.name) nameEl.textContent = r.name;
+  setTimeout(closeMyAccount, 700);
 }

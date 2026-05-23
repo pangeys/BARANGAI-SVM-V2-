@@ -3,9 +3,13 @@ error_reporting(0);
 ini_set('display_errors', 0);
 
 /* ═══════════════════════════════════════════════════════
-   BICTS — api.php
+   BICTS — api.php  (SECURED — prepared statements)
    REST backend for complaints, notifications, ID counter.
-   Now filters complaints by the logged-in admin's barangay.
+   Filters complaints by the logged-in admin's barangay.
+
+   Security change: every query that touches user input now
+   uses mysqli prepared statements (bind_param) instead of
+   string interpolation + esc(). Behaviour is unchanged.
 ═══════════════════════════════════════════════════════ */
 
 if (session_status() === PHP_SESSION_NONE) session_start();
@@ -28,10 +32,6 @@ if ($conn->connect_error) {
     http_response_code(500);
     echo json_encode(["error" => "DB connection failed: " . $conn->connect_error]);
     exit;
-}
-
-function esc($conn, $val) {
-    return $conn->real_escape_string(strval($val ?? ''));
 }
 
 function respond($data, $code = 200) {
@@ -60,9 +60,7 @@ if ($method === 'GET' && $type === 'init') {
     // fetch complaints filtered by barangay
     $complaints = [];
     if ($barangay_id > 0) {
-        $stmt = $conn->prepare(
-            "SELECT * FROM complaints WHERE barangay_id = ? ORDER BY created_at DESC"
-        );
+        $stmt = $conn->prepare("SELECT * FROM complaints WHERE barangay_id = ? ORDER BY created_at DESC");
         $stmt->bind_param('i', $barangay_id);
         $stmt->execute();
         $r = $stmt->get_result();
@@ -92,16 +90,15 @@ if ($method === 'GET' && $type === 'init') {
             'barangay_id' => intval($row['barangay_id']),
         ];
     }
+    if (isset($stmt)) { $stmt->close(); unset($stmt); }
 
     // notifications filtered by barangay
     $notifs = [];
     if ($barangay_id > 0) {
-        $stmt2 = $conn->prepare(
-            "SELECT * FROM notifications WHERE barangay_id = ? OR barangay_id IS NULL ORDER BY created_at DESC"
-        );
-        $stmt2->bind_param('i', $barangay_id);
-        $stmt2->execute();
-        $r2 = $stmt2->get_result();
+        $stmt = $conn->prepare("SELECT * FROM notifications WHERE barangay_id = ? OR barangay_id IS NULL ORDER BY created_at DESC");
+        $stmt->bind_param('i', $barangay_id);
+        $stmt->execute();
+        $r2 = $stmt->get_result();
     } else {
         $r2 = $conn->query("SELECT * FROM notifications ORDER BY created_at DESC");
     }
@@ -112,6 +109,7 @@ if ($method === 'GET' && $type === 'init') {
             'time' => $row['time'],
         ];
     }
+    if (isset($stmt)) { $stmt->close(); unset($stmt); }
 
     // next complaint ID
     $r3     = $conn->query("SELECT next_id FROM id_counter WHERE id = 1");
@@ -140,36 +138,44 @@ if ($method === 'POST' && $action === 'add_complaint') {
     $num = $nextId - 1;
     $cid = '#' . str_pad($num, 3, '0', STR_PAD_LEFT);
 
-    $dateFiled = esc($conn, $d['date_filed']  ?? date('M j'));
-    $desc      = esc($conn, $d['description'] ?? '');
-    $loc       = esc($conn, $d['location']    ?? '');
-    $incDate   = esc($conn, $d['date']        ?? '');
-    $incTime   = esc($conn, $d['time']        ?? '');
-    $comp      = esc($conn, $d['complainant'] ?? 'Anonymous');
-    $affected  = intval($d['affected']        ?? 1);
-    $cat       = esc($conn, $d['category']    ?? '');
-    $conf      = intval($d['confidence']      ?? 0);
-    $score     = esc($conn, $d['score']       ?? '0');
-    $priority  = esc($conn, $d['priority']    ?? 'Low');
-    $pb        = esc($conn, $d['pb']          ?? 'b-gray');
-    $officer   = esc($conn, $d['officer']     ?? '—');
-    $status    = esc($conn, $d['status']      ?? 'Open');
-    $sb        = esc($conn, $d['sb']          ?? 'b-gray');
-    $cidEsc    = esc($conn, $cid);
-    $bid       = $barangay_id > 0 ? $barangay_id : 'NULL';
+    // gather + type the values (no escaping needed — bound below)
+    $dateFiled = (string)($d['date_filed']  ?? date('M j'));
+    $desc      = (string)($d['description'] ?? '');
+    $loc       = (string)($d['location']    ?? '');
+    $incDate   = (string)($d['date']        ?? '');
+    $incTime   = (string)($d['time']        ?? '');
+    $comp      = (string)($d['complainant'] ?? 'Anonymous');
+    $affected  = (int)($d['affected']       ?? 1);
+    $cat       = (string)($d['category']    ?? '');
+    $conf      = (int)($d['confidence']     ?? 0);
+    $score     = (string)($d['score']       ?? '0');
+    $priority  = (string)($d['priority']    ?? 'Low');
+    $pb        = (string)($d['pb']          ?? 'b-gray');
+    $officer   = (string)($d['officer']     ?? '—');
+    $status    = (string)($d['status']      ?? 'Open');
+    $sb        = (string)($d['sb']          ?? 'b-gray');
 
-    $ok = $conn->query("
-        INSERT INTO complaints
-            (complaint_id, date_filed, description, location,
-             incident_date, incident_time, complainant, affected,
-             category, confidence, score, priority, priority_badge,
-             officer, status, status_badge, barangay_id)
-        VALUES
-            ('$cidEsc', '$dateFiled', '$desc', '$loc',
-             '$incDate', '$incTime', '$comp', $affected,
-             '$cat', $conf, '$score', '$priority', '$pb',
-             '$officer', '$status', '$sb', $bid)
-    ");
+    // barangay_id: bind a real value, or NULL when there's no session
+    $bid = $barangay_id > 0 ? $barangay_id : null;
+
+    $sql = "INSERT INTO complaints
+              (complaint_id, date_filed, description, location,
+               incident_date, incident_time, complainant, affected,
+               category, confidence, score, priority, priority_badge,
+               officer, status, status_badge, barangay_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    $stmt = $conn->prepare($sql);
+    // types (17): cid,dateFiled,desc,loc,incDate,incTime,comp = 7×s,
+    //             affected=i, cat=s, conf=i, score,priority,pb,officer,status,sb = 6×s, bid=i
+    $stmt->bind_param(
+        'sssssssisissssssi',
+        $cid, $dateFiled, $desc, $loc,
+        $incDate, $incTime, $comp, $affected,
+        $cat, $conf, $score, $priority, $pb,
+        $officer, $status, $sb, $bid
+    );
+    $ok = $stmt->execute();
+    $stmt->close();
 
     if ($ok) {
         respond(["success" => true, "id" => $cid]);
@@ -182,14 +188,15 @@ if ($method === 'POST' && $action === 'add_complaint') {
    POST — add_notification  (tags with admin's barangay)
 ════════════════════════════════════════════════════ */
 if ($method === 'POST' && $action === 'add_notification') {
-    $msg   = esc($conn, $body['msg']        ?? '');
-    $ntype = esc($conn, $body['notif_type'] ?? 'info');
-    $time  = esc($conn, $body['time']       ?? '');
-    $bid   = $barangay_id > 0 ? $barangay_id : 'NULL';
+    $msg   = (string)($body['msg']        ?? '');
+    $ntype = (string)($body['notif_type'] ?? 'info');
+    $time  = (string)($body['time']       ?? '');
+    $bid   = $barangay_id > 0 ? $barangay_id : null;
 
-    $conn->query(
-        "INSERT INTO notifications (msg, type, time, barangay_id) VALUES ('$msg', '$ntype', '$time', $bid)"
-    );
+    $stmt = $conn->prepare("INSERT INTO notifications (msg, type, time, barangay_id) VALUES (?, ?, ?, ?)");
+    $stmt->bind_param('sssi', $msg, $ntype, $time, $bid);
+    $stmt->execute();
+    $stmt->close();
     respond(["success" => true]);
 }
 
@@ -197,24 +204,28 @@ if ($method === 'POST' && $action === 'add_notification') {
    PUT — update_status  (only own barangay's complaints)
 ════════════════════════════════════════════════════ */
 if ($method === 'PUT' && $action === 'update_status') {
-    $id         = esc($conn, $body['id']          ?? '');
-    $status     = esc($conn, $body['status']      ?? '');
-    $sb         = esc($conn, $body['sb']          ?? 'b-gray');
-    $resolvedAt = esc($conn, $body['resolved_at'] ?? '');
+    $id         = (string)($body['id']          ?? '');
+    $status     = (string)($body['status']      ?? '');
+    $sb         = (string)($body['sb']          ?? 'b-gray');
+    $resolvedAt = (string)($body['resolved_at'] ?? '');
 
     if ($barangay_id > 0) {
-        $ok = $conn->query("
-            UPDATE complaints
-            SET status = '$status', status_badge = '$sb', resolved_at = '$resolvedAt'
-            WHERE complaint_id = '$id' AND barangay_id = $barangay_id
-        ");
+        $stmt = $conn->prepare(
+            "UPDATE complaints
+                SET status = ?, status_badge = ?, resolved_at = ?
+              WHERE complaint_id = ? AND barangay_id = ?"
+        );
+        $stmt->bind_param('ssssi', $status, $sb, $resolvedAt, $id, $barangay_id);
     } else {
-        $ok = $conn->query("
-            UPDATE complaints
-            SET status = '$status', status_badge = '$sb', resolved_at = '$resolvedAt'
-            WHERE complaint_id = '$id'
-        ");
+        $stmt = $conn->prepare(
+            "UPDATE complaints
+                SET status = ?, status_badge = ?, resolved_at = ?
+              WHERE complaint_id = ?"
+        );
+        $stmt->bind_param('ssss', $status, $sb, $resolvedAt, $id);
     }
+    $ok = $stmt->execute();
+    $stmt->close();
     respond(["success" => (bool)$ok]);
 }
 

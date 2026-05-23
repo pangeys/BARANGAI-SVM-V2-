@@ -48,7 +48,7 @@
       <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
         <button class="btn btn-primary btn-sm" onclick="showModal('submitModal')">+ Submit Complaint</button>
         <div class="topbar-action" onclick="showScreen('notifs',null)">🔔</div>
-        <div class="topbar-action">👤</div>
+        <div class="topbar-action" onclick="openMyAccount()" title="My account">👤</div>
       </div>
     </div>
 
@@ -430,15 +430,43 @@
 <div id="screen-users" class="screen">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
     <div class="page-header" style="margin:0;"><div class="page-title">User Management</div></div>
-    <button class="btn btn-primary">+ Add User</button>
+    <button class="btn btn-primary" onclick="openAddUser()">+ Add User</button>
   </div>
-  <div class="card">
-    <div class="card-body np">
+
+  <div class="tabs" id="users-tabs" style="margin-bottom:14px;">
+    <div class="tab active" onclick="switchUsersTab('users',this)">Users &amp; Roles</div>
+    <div class="tab"        onclick="switchUsersTab('audit',this)">Activity Log</div>
+    <div class="tab"        onclick="switchUsersTab('stats',this)">Staff Stats</div>
+  </div>
+
+  <!-- Panel 1: users -->
+  <div id="users-panel">
+    <div class="card"><div class="card-body np">
       <table class="tbl">
         <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th></th></tr></thead>
         <tbody id="users-tbody"></tbody>
       </table>
-    </div>
+    </div></div>
+  </div>
+
+  <!-- Panel 2: activity log -->
+  <div id="audit-panel" style="display:none;">
+    <div class="card"><div class="card-body np">
+      <table class="tbl">
+        <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead>
+        <tbody id="audit-tbody"></tbody>
+      </table>
+    </div></div>
+  </div>
+
+  <!-- Panel 3: staff stats -->
+  <div id="stats-panel" style="display:none;">
+    <div class="card"><div class="card-body np">
+      <table class="tbl">
+        <thead><tr><th>Staff</th><th style="text-align:center">Total Cases</th><th style="text-align:center">Resolved</th><th>Resolution Rate</th></tr></thead>
+        <tbody id="stats-tbody"></tbody>
+      </table>
+    </div></div>
   </div>
 </div>
 
@@ -646,6 +674,65 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('resolveModal')">Cancel</button>
       <button class="btn" style="background:var(--green);color:#fff;">✓ Mark as Resolved</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD USER MODAL -->
+<div id="addUserModal" class="modal-overlay">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">Add User</div>
+      <div class="modal-close" onclick="closeAddUser()">✕</div>
+    </div>
+    <div class="modal-body">
+      <div id="au_msg" style="font-size:12px;margin-bottom:8px;"></div>
+      <div class="form-row">
+        <div class="field"><div class="label">Full name <span>*</span></div><input class="inp" id="au_name"></div>
+        <div class="field"><div class="label">Username <span>*</span></div><input class="inp" id="au_username"></div>
+      </div>
+      <div class="form-row full"><div class="field"><div class="label">Email <span>*</span></div><input class="inp" id="au_email" type="email"></div></div>
+      <div class="form-row">
+        <div class="field"><div class="label">Role</div>
+          <select class="inp sel" id="au_role"><option value="staff">Staff</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select>
+        </div>
+        <div class="field"><div class="label">Password <span>*</span></div><input class="inp" id="au_pw" type="password" placeholder="Min 6 chars"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeAddUser()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAddUser()">Create User</button>
+    </div>
+  </div>
+</div>
+
+<!-- MY ACCOUNT MODAL -->
+<div id="myAccountModal" class="modal-overlay">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">My Account</div>
+      <div class="modal-close" onclick="closeMyAccount()">✕</div>
+    </div>
+    <div class="modal-body">
+      <div id="ma_msg" style="font-size:12px;margin-bottom:8px;"></div>
+      <div class="form-row full"><div class="field"><div class="label">Full name <span>*</span></div><input class="inp" id="ma_name"></div></div>
+      <div class="form-row">
+        <div class="field"><div class="label">Email <span>*</span></div><input class="inp" id="ma_email" type="email"></div>
+        <div class="field"><div class="label">Phone</div><input class="inp" id="ma_phone"></div>
+      </div>
+      <div class="form-row full"><div class="field"><div class="label">Address</div><input class="inp" id="ma_addr"></div></div>
+      <div class="form-row">
+        <div class="field"><div class="label">Role (read only)</div><input class="inp filled" id="ma_role" disabled></div>
+        <div class="field"><div class="label">New password (optional)</div><input class="inp" id="ma_pw" type="password" placeholder="Leave blank to keep"></div>
+      </div>
+      <div style="display:flex;gap:16px;font-size:11px;color:var(--text3);margin-top:4px;">
+        <span>Last login: <b id="ma_last">—</b></span>
+        <span id="ma_count">—</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeMyAccount()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveMyAccount()">Save Changes</button>
     </div>
   </div>
 </div>
