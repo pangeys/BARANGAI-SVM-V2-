@@ -13,6 +13,38 @@ $user = $_SESSION['user'];
 if ($user['role'] !== 'resident') out(false, ['error' => 'Residents only.'], 403);
 if (!$user['barangay_id'])        out(false, ['error' => 'No barangay on your account.'], 400);
 
+$db = getDB();
+
+/* ════════════════════════════════════════════════════
+   GET ?action=my_complaints
+   Returns ONLY the complaints submitted by this resident.
+   Privacy: filtered server-side by submitted_by = own id.
+════════════════════════════════════════════════════ */
+$action = $_GET['action'] ?? '';
+if ($action === 'my_complaints') {
+    $uid = (int)$user['id'];
+    $stmt = $db->prepare(
+        "SELECT complaint_id, date_filed, description, location,
+                incident_date, incident_time, category, confidence,
+                priority, priority_badge, officer, status, status_badge,
+                resolved_at, close_reason
+           FROM complaints
+          WHERE submitted_by = ?
+          ORDER BY created_at DESC"
+    );
+    $stmt->bind_param('i', $uid);
+    $stmt->execute();
+    $res  = $stmt->get_result();
+    $list = [];
+    while ($row = $res->fetch_assoc()) $list[] = $row;
+    $stmt->close();
+    $db->close();
+    out(true, ['complaints' => $list]);
+}
+
+/* ════════════════════════════════════════════════════
+   POST (default) — submit a new complaint
+════════════════════════════════════════════════════ */
 $input         = json_decode(file_get_contents('php://input'), true) ?? [];
 $incident_date = $input['incident_date'] ?? '';
 $incident_time = $input['incident_time'] ?: null;
@@ -31,7 +63,6 @@ $score          = $input['score']          ?? '';
 if (!$incident_date || !$location || !$description)
     out(false, ['error' => 'Date, location, and description are required.'], 422);
 
-$db   = getDB();
 $year = date('Y');
 $cnt  = (int)$db->query("SELECT COUNT(*) FROM complaints WHERE submitted_by IS NOT NULL")->fetch_row()[0];
 $complaint_id = 'RES-' . $year . '-' . str_pad($cnt + 1, 5, '0', STR_PAD_LEFT);

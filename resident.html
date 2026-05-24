@@ -48,8 +48,23 @@
   }
   .res-signout:hover { color: #c53030; border-color: #c53030; }
 
+  /* ── NAV TABS (Submit / My Complaints) ── */
+  .res-nav {
+    max-width: 700px; margin: 26px auto 0; padding: 0 24px;
+    display: flex; gap: 8px;
+  }
+  .res-nav-btn {
+    flex: 1; text-align: center; cursor: pointer;
+    padding: 11px; border-radius: 10px; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--border, #e5e8ed); background: var(--surface, #fff);
+    color: var(--text2, #4a6080); transition: all .15s;
+  }
+  .res-nav-btn.active {
+    background: var(--blue, #2f6fed); color: #fff; border-color: var(--blue, #2f6fed);
+  }
+
   /* ── BODY ── */
-  .res-body { max-width: 700px; margin: 40px auto 80px; padding: 0 24px; }
+  .res-body { max-width: 700px; margin: 22px auto 80px; padding: 0 24px; }
 
   .res-welcome { margin-bottom: 22px; }
   .res-welcome-title { font-size: 22px; font-weight: 800; color: var(--text, #1a202c); margin-bottom: 3px; }
@@ -91,6 +106,38 @@
     font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 6px;
   }
   .res-success-sub { font-size: 13px; color: var(--text3, #9aa3af); margin-bottom: 28px; line-height: 1.7; }
+
+  /* ── MY COMPLAINTS LIST ── */
+  .rc-card {
+    border: 1px solid var(--border, #e5e8ed); border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 14px; background: var(--surface, #fff);
+  }
+  .rc-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .rc-id { font-family: var(--mono, monospace); font-size: 13px; font-weight: 700; color: var(--text, #1a202c); }
+  .rc-date { font-size: 11px; color: var(--text3, #9aa3af); margin-left: auto; }
+  .rc-desc { font-size: 13px; color: var(--text2, #4a6080); line-height: 1.6; margin-bottom: 12px; }
+  .rc-meta { font-size: 11px; color: var(--text3, #9aa3af); margin-bottom: 14px; }
+  .rc-meta b { color: var(--text2, #4a6080); }
+
+  /* progress steps */
+  .rc-steps { display: flex; align-items: center; }
+  .rc-step { flex: 1; text-align: center; position: relative; }
+  .rc-step-dot {
+    width: 22px; height: 22px; border-radius: 50%; margin: 0 auto 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+    background: var(--bg2, #e8edf3); color: var(--text3, #9aa3af);
+  }
+  .rc-step.done .rc-step-dot { background: var(--green, #38a169); color: #fff; }
+  .rc-step.cur  .rc-step-dot { background: var(--blue, #2f6fed); color: #fff; }
+  .rc-step.closed .rc-step-dot { background: #8A9BB0; color: #fff; }
+  .rc-step-lbl { font-size: 9.5px; color: var(--text3, #9aa3af); font-weight: 600; }
+  .rc-step.done .rc-step-lbl, .rc-step.cur .rc-step-lbl { color: var(--text2, #4a6080); }
+  .rc-line { flex: 0 0 auto; height: 2px; width: 18px; background: var(--border, #e5e8ed); margin-bottom: 18px; }
+  .rc-line.done { background: var(--green, #38a169); }
+
+  .rc-empty { text-align: center; padding: 50px 20px; color: var(--text3, #9aa3af); }
+  .rc-empty-icon { font-size: 44px; margin-bottom: 12px; }
 </style>
 </head>
 <body>
@@ -107,6 +154,12 @@
     <div class="res-avatar" id="resAvatar">…</div>
     <button class="res-signout" onclick="doLogout()">Sign Out</button>
   </div>
+</div>
+
+<!-- ═══════ NAV TABS ═══════ -->
+<div class="res-nav">
+  <div class="res-nav-btn active" id="nav-submit" onclick="showView('submit')">＋ Submit a Complaint</div>
+  <div class="res-nav-btn" id="nav-track" onclick="showView('track')">📋 My Complaints</div>
 </div>
 
 <!-- ═══════ BODY ═══════ -->
@@ -189,6 +242,20 @@
     </div>
   </div>
 
+  <!-- ── MY COMPLAINTS (tracking) ── -->
+  <div id="trackView" style="display:none;">
+    <div class="res-welcome">
+      <div class="res-welcome-title">My Complaints</div>
+      <div class="res-welcome-sub">Track the status and progress of the complaints you submitted.</div>
+    </div>
+    <div id="trackList">
+      <div class="rc-empty">
+        <div class="rc-empty-icon">⏳</div>
+        Loading your complaints…
+      </div>
+    </div>
+  </div>
+
 </div><!-- /res-body -->
 
 <!-- load classifier scripts (same ones used by admin dashboard) -->
@@ -226,6 +293,98 @@ async function init(){
       document.getElementById('aiHint').classList.add('show');
     });
   }
+}
+
+/* ── view toggle (submit vs track) ── */
+function showView(which){
+  const isSubmit = which === 'submit';
+  document.getElementById('nav-submit').classList.toggle('active', isSubmit);
+  document.getElementById('nav-track').classList.toggle('active', !isSubmit);
+
+  // Submit side: show the form (and keep success screen logic intact)
+  document.getElementById('formView').style.display    = isSubmit ? '' : 'none';
+  document.getElementById('successView').style.display = 'none';
+  document.getElementById('trackView').style.display   = isSubmit ? 'none' : '';
+
+  if (!isSubmit) loadMyComplaints();
+}
+
+/* ── load this resident's own complaints ── */
+async function loadMyComplaints(){
+  const box = document.getElementById('trackList');
+  box.innerHTML = '<div class="rc-empty"><div class="rc-empty-icon">⏳</div>Loading your complaints…</div>';
+  try {
+    const r = await fetch(SUB_API + '?action=my_complaints');
+    const d = await r.json();
+    if (!d.ok) {
+      box.innerHTML = '<div class="rc-empty"><div class="rc-empty-icon">⚠️</div>' + (d.error || 'Could not load your complaints.') + '</div>';
+      return;
+    }
+    if (!d.complaints.length) {
+      box.innerHTML = '<div class="rc-empty"><div class="rc-empty-icon">📭</div>You haven\'t submitted any complaints yet.</div>';
+      return;
+    }
+    box.innerHTML = d.complaints.map(renderComplaintCard).join('');
+  } catch(e) {
+    box.innerHTML = '<div class="rc-empty"><div class="rc-empty-icon">⚠️</div>Cannot reach the server. Is Apache &amp; MySQL running?</div>';
+  }
+}
+
+/* ── render one complaint card with progress ── */
+function renderComplaintCard(c){
+  const STAGES = ['Open', 'In Progress', 'For Hearing', 'Resolved'];
+  const isClosed = c.status === 'Closed';
+  const curIdx   = STAGES.indexOf(c.status);
+
+  // build the progress steps
+  let steps = '';
+  STAGES.forEach((stage, i) => {
+    let cls = '';
+    if (isClosed) {
+      cls = 'done'; // closed: show prior path as done, closed shown separately
+    } else if (i < curIdx)  cls = 'done';
+    else if (i === curIdx)  cls = 'cur';
+    const mark = (cls === 'done') ? '✓' : (i + 1);
+    if (i > 0) steps += '<div class="rc-line ' + ((i <= curIdx || isClosed) ? 'done' : '') + '"></div>';
+    steps += '<div class="rc-step ' + cls + '">' +
+               '<div class="rc-step-dot">' + mark + '</div>' +
+               '<div class="rc-step-lbl">' + stage + '</div>' +
+             '</div>';
+  });
+
+  // closed banner replaces the timeline meaning
+  const statusLine = isClosed
+    ? '<div style="margin-top:6px;font-size:12px;color:#8A9BB0;font-weight:600;">⊘ This case was closed' +
+        (c.close_reason ? ' — ' + esc(c.close_reason) : '') + '</div>'
+    : '';
+
+  const officer = (c.officer && c.officer !== '—')
+    ? esc(c.officer)
+    : '<span style="color:var(--text3,#9aa3af)">Not yet assigned</span>';
+
+  const badgeCls = c.status_badge || 'b-gray';
+  const shortDesc = (c.description || '').length > 140
+    ? esc(c.description.slice(0, 140)) + '…' : esc(c.description || '');
+
+  return '<div class="rc-card">' +
+    '<div class="rc-top">' +
+      '<span class="rc-id">' + esc(c.complaint_id) + '</span>' +
+      '<span class="badge b-blue" style="font-size:10px;">' + esc(c.category || 'Unclassified') + '</span>' +
+      '<span class="badge ' + badgeCls + '" style="font-size:10px;">' + esc(c.status) + '</span>' +
+      '<span class="rc-date">' + esc(c.date_filed || '') + '</span>' +
+    '</div>' +
+    '<div class="rc-desc">' + shortDesc + '</div>' +
+    '<div class="rc-meta">Assigned officer: <b>' + officer + '</b>' +
+      (c.priority ? ' &nbsp;·&nbsp; Priority: <b>' + esc(c.priority) + '</b>' : '') + '</div>' +
+    (isClosed ? statusLine : '<div class="rc-steps">' + steps + '</div>') +
+  '</div>';
+}
+
+/* ── tiny HTML escaper ── */
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 /* ── helpers ── */
