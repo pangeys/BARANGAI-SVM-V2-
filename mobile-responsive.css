@@ -310,14 +310,13 @@ html, body {
   .modal {
     max-width: 100%;
     width: 100%;
-    /* FIX: leave room for browser nav bar (≈83px on iOS Safari) */
-    max-height: calc(100dvh - 70px);
-    max-height: calc(100vh - 70px);    /* fallback */
+    height: calc(100dvh - 60px);       /* FIX: real height so body can scroll */
+    max-height: calc(100dvh - 60px);
+    max-height: calc(100vh - 60px);    /* fallback */
     border-radius: 18px 18px 0 0;
     border-bottom: none;
     display: flex;
     flex-direction: column;
-    /* FIX: modal itself doesn't scroll — children do */
     overflow: hidden;
   }
 
