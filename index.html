@@ -35,7 +35,7 @@
     <div class="nav-item"              onclick="showScreen('reports',this)"><span class="nav-icon">📈</span> Reports</div>
     <div class="nav-item"              onclick="showScreen('users',this)"><span class="nav-icon">👥</span> Users</div>
     <div class="nav-item"              onclick="showScreen('notifs',this)"><span class="nav-icon">🔔</span> Notifications</div>
-    <div class="nav-item"              onclick="showScreen('settings',this)"><span class="nav-icon">⚙️</span> Settings</div>
+    <div class="nav-item"              onclick="showScreen('officers',this)"><span class="nav-icon">👮</span> Officers</div>
     <div id="sidebar-footer">
       <div class="logout-btn" onclick="doLogout()">⬅ Sign Out</div>
     </div>
@@ -464,240 +464,46 @@
      SETTINGS  — replace the existing <div id="screen-settings"> block
      Officers tab panel is UNTOUCHED (copied as-is from original)
 ═══════════════════════════════════════════════════ -->
-<div id="screen-settings" class="screen">
-  <div class="page-header"><div class="page-title">System Settings</div></div>
-
-  <div class="tabs" id="settings-tabs">
-    <div class="tab active" onclick="switchSettingsTab('general',this)">General</div>
-    <div class="tab"        onclick="switchSettingsTab('categories',this)">Categories</div>
-    <div class="tab"        onclick="switchSettingsTab('ai',this)">AI Model</div>
-    <div class="tab"        onclick="switchSettingsTab('audit',this)">Audit Log</div>
-    <div class="tab"        onclick="switchSettingsTab('officers',this)">👮 Officers</div>
+<div id="screen-officers" class="screen">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+    <div>
+      <div class="page-title">Officer Management</div>
+      <div class="page-sub">Manage officers who can be assigned to handle barangay complaints</div>
+    </div>
+    <button class="btn btn-primary" onclick="openAddOfficer()">+ Add Officer</button>
   </div>
-
-  <!-- ══ GENERAL ══ -->
-  <div id="settings-panel-general" style="max-width:640px;">
-    <div class="card">
-      <div class="card-header"><div class="card-title">General Configuration</div></div>
-      <div class="card-body">
-        <div id="settings-msg" style="font-size:12px;min-height:16px;margin-bottom:8px;"></div>
-
-        <div class="form-row full">
-          <div class="field">
-            <div class="label">System Name</div>
-            <input class="inp filled" id="cfg-system-name" value="BICTS – Barangay Intelligent Case Tracking System" disabled>
-          </div>
-        </div>
-        <div class="form-row full">
-          <div class="field">
-            <div class="label">Barangay Name</div>
-            <input class="inp" id="cfg-barangay-name" placeholder="Not set">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="field">
-            <div class="label">Municipality</div>
-            <input class="inp" id="cfg-municipality" placeholder="Not set">
-          </div>
-          <div class="field">
-            <div class="label">Admin Email</div>
-            <input class="inp" id="cfg-admin-email" type="email" placeholder="Not set">
-          </div>
-        </div>
-
-        <hr class="divider">
-
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-name">Auto-classify on submission (SVM)</div>
-            <div class="setting-desc">Use SVM (TF-IDF bigrams) to auto-classify when submitted</div>
-          </div>
-          <div class="toggle on" id="tog-auto-classify" onclick="toggleSetting(this)"></div>
-        </div>
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-name">Allow anonymous complaint filing</div>
-            <div class="setting-desc">Residents can submit without personal information</div>
-          </div>
-          <div class="toggle on" id="tog-allow-anonymous" onclick="toggleSetting(this)"></div>
-        </div>
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-name">Confidence threshold flag (&lt;70%)</div>
-            <div class="setting-desc">Flag complaints below 70% confidence for manual review</div>
-          </div>
-          <div class="toggle on" id="tog-confidence-flag" onclick="toggleSetting(this)"></div>
-        </div>
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-name">Human-in-the-loop validation</div>
-            <div class="setting-desc">Officers must validate AI classification before finalizing</div>
-          </div>
-          <div class="toggle off" id="tog-human-validation" onclick="toggleSetting(this)"></div>
-        </div>
-        <div class="setting-row" style="border-bottom:none;">
-          <div class="setting-info">
-            <div class="setting-name">BiLSTM fallback classification</div>
-            <div class="setting-desc">Use BiLSTM if SVM confidence is below threshold</div>
-          </div>
-          <div class="toggle off" id="tog-bilstm-fallback" onclick="toggleSetting(this)"></div>
-        </div>
-
-        <div style="display:flex;justify-content:flex-end;margin-top:18px;">
-          <button class="btn btn-primary" id="settings-save-btn" onclick="saveSettings()">Save Settings</button>
-        </div>
-      </div>
+  <div style="display:flex;gap:12px;margin-bottom:16px;">
+    <div class="stat-card" style="flex:1;padding:14px 16px;">
+      <div class="stat-label">Total Officers</div>
+      <div class="stat-value" id="officer-stat-total" style="font-size:22px;">0</div>
+    </div>
+    <div class="stat-card green" style="flex:1;padding:14px 16px;">
+      <div class="stat-label">Active</div>
+      <div class="stat-value" id="officer-stat-active" style="font-size:22px;color:var(--green);">0</div>
+    </div>
+    <div class="stat-card amber" style="flex:1;padding:14px 16px;">
+      <div class="stat-label">Inactive</div>
+      <div class="stat-value" id="officer-stat-inactive" style="font-size:22px;color:var(--amber);">0</div>
     </div>
   </div>
-
-  <!-- ══ CATEGORIES ══ -->
-  <div id="settings-panel-categories" style="display:none;max-width:700px;">
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">Complaint Categories</div>
-        <span class="badge b-blue">7 Active</span>
-      </div>
-      <div class="card-body np">
-        <table class="tbl">
-          <thead>
-            <tr><th>#</th><th>Category</th><th>Color</th><th>Complaints</th><th>Avg Confidence</th></tr>
-          </thead>
-          <tbody id="categories-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-    <div class="alert alert-info" style="font-size:11px;">
-      ℹ️ Categories are fixed to match the trained SVM model. Changing them would require model retraining.
+  <div class="card">
+    <div class="card-body np">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Rank / Position</th>
+            <th>Contact</th>
+            <th>Email</th>
+            <th>Status</th>
+            <th style="width:160px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="officers-tbody"></tbody>
+      </table>
     </div>
   </div>
-
-  <!-- ══ AI MODEL ══ -->
-  <div id="settings-panel-ai" style="display:none;max-width:700px;">
-    <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);">
-      <div class="stat-card green">
-        <div class="stat-label">Active Model</div>
-        <div class="stat-value" style="font-size:20px;color:var(--green)">SVM</div>
-        <div class="stat-delta">TF-IDF (1,2)-gram</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Best Accuracy</div>
-        <div class="stat-value" style="font-size:20px;">95.45%</div>
-        <div class="stat-delta">v2 · 200/cat dataset</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">F1-Score</div>
-        <div class="stat-value" style="font-size:20px;">95.3%</div>
-        <div class="stat-delta">Weighted · 22 samples</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header"><div class="card-title">Model Configuration</div></div>
-      <div class="card-body">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;">
-          <div class="field">
-            <div class="label">Active Classifier</div>
-            <select class="inp sel" id="cfg-active-model" disabled>
-              <option value="svm" selected>SVM (TF-IDF bigrams) — Recommended</option>
-              <option value="bilstm">BiLSTM — Higher recall, slower</option>
-              <option value="nb">Naive Bayes — Fastest, lower accuracy</option>
-            </select>
-          </div>
-          <div class="field">
-            <div class="label">Confidence Threshold</div>
-            <select class="inp sel" id="cfg-conf-threshold" disabled>
-              <option value="60">60% — More classifications</option>
-              <option value="70" selected>70% — Balanced (Recommended)</option>
-              <option value="80">80% — Higher precision</option>
-              <option value="90">90% — Very strict</option>
-            </select>
-          </div>
-        </div>
-        <div class="alert alert-info" style="margin-bottom:0;font-size:11px;">
-          🤖 <strong>Model switching is locked</strong> — the SVM model (v2, 200 samples/category) achieved the best results (F1: 95.3%) and is the production classifier. BiLSTM is available as fallback via the toggle in General settings.
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header"><div class="card-title">Per-Category Performance — SVM v2</div></div>
-      <div class="card-body" id="ai-settings-perf-bars"></div>
-    </div>
-  </div>
-
-  <!-- ══ AUDIT LOG ══ -->
-  <div id="settings-panel-audit" style="display:none;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-      <div style="font-size:12px;color:var(--text3);">Last 100 system events</div>
-      <button class="btn btn-ghost btn-sm" onclick="loadSettingsAuditLog()">↻ Refresh</button>
-    </div>
-    <div class="card">
-      <div class="card-body np">
-        <table class="tbl">
-          <thead>
-            <tr><th>When</th><th>User</th><th>Action</th><th>Detail</th><th>IP</th></tr>
-          </thead>
-          <tbody id="settings-audit-tbody">
-            <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text3);font-size:12px;">Loading…</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══ OFFICERS (UNTOUCHED — original code) ══ -->
-  <div id="settings-panel-officers" style="display:none;">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
-      <div>
-        <div style="font-size:15px;font-weight:700;color:var(--text);">Officer Management</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:3px;">
-          Manage officers who can be assigned to handle barangay complaints
-        </div>
-      </div>
-      <button class="btn btn-primary" onclick="openAddOfficer()">+ Add Officer</button>
-    </div>
-    <div style="display:flex;gap:12px;margin-bottom:16px;">
-      <div class="stat-card" style="flex:1;padding:14px 16px;">
-        <div class="stat-label">Total Officers</div>
-        <div class="stat-value" id="officer-stat-total" style="font-size:22px;">0</div>
-      </div>
-      <div class="stat-card green" style="flex:1;padding:14px 16px;">
-        <div class="stat-label">Active</div>
-        <div class="stat-value" id="officer-stat-active" style="font-size:22px;color:var(--green);">0</div>
-      </div>
-      <div class="stat-card amber" style="flex:1;padding:14px 16px;">
-        <div class="stat-label">Inactive</div>
-        <div class="stat-value" id="officer-stat-inactive" style="font-size:22px;color:var(--amber);">0</div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-body np">
-        <table class="tbl">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Rank / Position</th>
-              <th>Contact</th>
-              <th>Email</th>
-              <th>Status</th>
-              <th style="width:160px;">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="officers-tbody">
-            <tr>
-              <td colspan="6" style="text-align:center;padding:48px;color:var(--text3);">
-                <div style="font-size:28px;margin-bottom:8px;">👮</div>
-                <div style="font-weight:600;margin-bottom:4px;">No officers yet</div>
-                <div style="font-size:11px;">Click <strong>+ Add Officer</strong> to get started.</div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-</div><!-- /screen-settings -->
+</div>
 
     </div><!-- /content -->
   </div><!-- /main -->

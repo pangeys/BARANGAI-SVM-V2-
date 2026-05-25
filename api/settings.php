@@ -43,28 +43,25 @@ $action = $_GET['action'] ?? ($body['action'] ?? '');
 
 /* ── GET settings ── */
 if ($method === 'GET' && $action === 'get') {
-    // Default values
     $defaults = [
-        'system_name'         => 'BICTS – Barangay Intelligent Case Tracking System',
-        'barangay_name'       => '',
-        'municipality'        => '',
-        'admin_email'         => '',
-        'auto_classify'       => 1,
-        'allow_anonymous'     => 1,
-        'confidence_flag'     => 1,
-        'human_validation'    => 0,
-        'bilstm_fallback'     => 0,
+        'system_name'      => 'BICTS – Barangay Intelligent Case Tracking System',
+        'barangay_name'    => '',
+        'municipality'     => '',
+        'admin_email'      => '',
+        'auto_classify'    => 1,
+        'allow_anonymous'  => 1,
+        'confidence_flag'  => 1,
+        'human_validation' => 0,
+        'bilstm_fallback'  => 0,
     ];
-
     if ($barangay_id > 0) {
         $stmt = $conn->prepare("SELECT * FROM barangays WHERE id = ?");
         $stmt->bind_param('i', $barangay_id);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-
         if ($row) {
-            $settings = [
+            respond(['ok' => true, 'settings' => [
                 'system_name'      => $defaults['system_name'],
                 'barangay_name'    => $row['name']             ?? '',
                 'municipality'     => $row['municipality']     ?? '',
@@ -74,11 +71,9 @@ if ($method === 'GET' && $action === 'get') {
                 'confidence_flag'  => isset($row['confidence_flag'])  ? (int)$row['confidence_flag']  : $defaults['confidence_flag'],
                 'human_validation' => isset($row['human_validation']) ? (int)$row['human_validation'] : $defaults['human_validation'],
                 'bilstm_fallback'  => isset($row['bilstm_fallback'])  ? (int)$row['bilstm_fallback']  : $defaults['bilstm_fallback'],
-            ];
-            respond(['ok' => true, 'settings' => $settings]);
+            ]]);
         }
     }
-
     respond(['ok' => true, 'settings' => $defaults]);
 }
 
@@ -94,76 +89,75 @@ if ($method === 'POST' && $action === 'save') {
     $bilstmFallback  = isset($body['bilstm_fallback'])  ? (int)(bool)$body['bilstm_fallback']  : 0;
 
     if ($barangay_id > 0) {
-        // Check if columns exist; if not, fall back to just updating name
         $cols = [];
         $res  = $conn->query("SHOW COLUMNS FROM barangays");
         while ($col = $res->fetch_assoc()) $cols[] = $col['Field'];
-
         $hasExtras = in_array('municipality', $cols);
 
         if ($hasExtras) {
             $stmt = $conn->prepare(
-                "UPDATE barangays
-                    SET name = ?,
-                        municipality     = ?,
-                        admin_email      = ?,
-                        auto_classify    = ?,
-                        allow_anonymous  = ?,
-                        confidence_flag  = ?,
-                        human_validation = ?,
-                        bilstm_fallback  = ?
-                  WHERE id = ?"
+                "UPDATE barangays SET name=?, municipality=?, admin_email=?,
+                 auto_classify=?, allow_anonymous=?, confidence_flag=?,
+                 human_validation=?, bilstm_fallback=? WHERE id=?"
             );
-            $stmt->bind_param(
-                'sssiiiii i',
+            $stmt->bind_param('sssiiiii i',
                 $barangayName, $municipality, $adminEmail,
                 $autoClassify, $allowAnonymous, $confidenceFlag,
-                $humanValidation, $bilstmFallback,
-                $barangay_id
+                $humanValidation, $bilstmFallback, $barangay_id
             );
         } else {
-            // Minimal: only name column exists
-            $stmt = $conn->prepare("UPDATE barangays SET name = ? WHERE id = ?");
+            $stmt = $conn->prepare("UPDATE barangays SET name=? WHERE id=?");
             $stmt->bind_param('si', $barangayName, $barangay_id);
         }
-
         $ok = $stmt->execute();
         $stmt->close();
 
         if ($ok) {
+            // action = 'settings_saved' — only this appears in Audit Log
             logActivity($conn, $userId, $userName, $barangay_id,
                 'settings_saved', 'System settings updated');
         }
-
         respond(['ok' => (bool)$ok]);
     }
-
     respond(['ok' => false, 'error' => 'No barangay session'], 401);
 }
 
-/* ── GET audit log for settings ── */
+/* ── GET audit log — SYSTEM CONFIG CHANGES ONLY ── */
 if ($method === 'GET' && $action === 'audit') {
+    // Only show settings/config-related actions — NOT logins, complaints, etc.
+    $auditActions = ['settings_saved', 'barangay_updated', 'model_changed', 'category_updated'];
+    $placeholders = implode(',', array_fill(0, count($auditActions), '?'));
     $rows = [];
+
     if ($barangay_id > 0) {
         $stmt = $conn->prepare(
             "SELECT user_name, action, detail, ip_address, created_at
                FROM activity_log
               WHERE barangay_id = ?
+                AND action IN ($placeholders)
               ORDER BY created_at DESC
               LIMIT 100"
         );
-        $stmt->bind_param('i', $barangay_id);
+        $types = 'i' . str_repeat('s', count($auditActions));
+        $params = array_merge([$barangay_id], $auditActions);
+        $stmt->bind_param($types, ...$params);
         $stmt->execute();
         $r = $stmt->get_result();
         $stmt->close();
         while ($row = $r->fetch_assoc()) $rows[] = $row;
     } else {
-        $r = $conn->query(
+        $stmt = $conn->prepare(
             "SELECT user_name, action, detail, ip_address, created_at
                FROM activity_log
+              WHERE action IN ($placeholders)
               ORDER BY created_at DESC
               LIMIT 100"
         );
+        $types = str_repeat('s', count($auditActions));
+        $stmt->bind_param($types, ...$auditActions);
+        $stmt->execute();
+        $r = $stmt->get_result();
+        $stmt->close();
         while ($row = $r->fetch_assoc()) $rows[] = $row;
     }
     respond(['ok' => true, 'log' => $rows]);
