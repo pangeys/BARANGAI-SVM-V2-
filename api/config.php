@@ -2,10 +2,10 @@
 error_reporting(0);
 ini_set('display_errors', 0);
 
-define('DB_HOST', 'localhost');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-define('DB_NAME', 'bicts_db');
+define('DB_HOST', 'sql113.infinityfree.com');
+define('DB_USER', 'if0_42015849');
+define('DB_PASS', 'thesisdemarizo');
+define('DB_NAME', 'if0_42015849_bai');
 
 function getDB() {
     $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);

@@ -4,10 +4,10 @@ ini_set('display_errors', 0);
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 
-define('DB_HOST', 'localhost');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-define('DB_NAME', 'bicts_db');
+define('DB_HOST', 'sql113.infinityfree.com');
+define('DB_USER', 'if0_42015849');
+define('DB_PASS', 'thesisdemarizo');
+define('DB_NAME', 'if0_42015849_bai');
 
 header("Content-Type: application/json; charset=utf-8");
 header("Access-Control-Allow-Origin: *");
