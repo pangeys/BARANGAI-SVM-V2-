@@ -548,7 +548,7 @@ function downloadReportPDF(title) {
   const dateTo   = document.getElementById('report-date-to')?.value   || '';
   const type     = getReportType(title);
 
-  let url = 'http://localhost/BARANGAI-SVM-V2-/api/generate_report.php?type=' + type;
+  let url = 'api/generate_report.php?type=' + type;
   if (dateFrom) url += '&date_from=' + encodeURIComponent(dateFrom);
   if (dateTo)   url += '&date_to='   + encodeURIComponent(dateTo);
 
@@ -567,7 +567,7 @@ function viewReport(title) {
   const dateTo   = document.getElementById('report-date-to')?.value   || '';
   const type     = getReportType(title);
 
-  let url = 'http://localhost/BARANGAI-SVM-V2-/api/generate_report.php?type=' + type + '&view=1';
+  let url = 'api/generate_report.php?type=' + type + '&view=1';
   if (dateFrom) url += '&date_from=' + encodeURIComponent(dateFrom);
   if (dateTo)   url += '&date_to='   + encodeURIComponent(dateTo);
 
