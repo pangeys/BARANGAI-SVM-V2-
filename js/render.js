@@ -327,15 +327,55 @@ function renderReports() {
 function renderWeeklyBars() {
   const el = document.getElementById('weekly-bars');
   if (!el) return;
-  /* Build from complaints store if available */
-  const buckets = new Array(8).fill(0);
-  complaints.forEach((c, i) => { if (i < 8) buckets[i]++; });
-  const max = Math.max(...buckets, 1);
-  el.innerHTML = buckets.map((h, i) =>
+
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth();
+  const monthName   = now.toLocaleDateString('en-PH', { month: 'long' });
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Weekly buckets for THIS month: W1=1-7, W2=8-14, ...
+  const weeks = [];
+  for (let start = 1; start <= daysInMonth; start += 7) {
+    const end = Math.min(start + 6, daysInMonth);
+    weeks.push({ start, end, count: 0, lbl: 'W' + (weeks.length + 1) });
+  }
+
+  // Count real complaints filed this month, by day-of-month
+  complaints.forEach(c => {
+    const parsed = new Date((c.date || '') + ' ' + year);
+    if (isNaN(parsed)) return;
+    if (parsed.getMonth() !== month) return;
+    const dom = parsed.getDate();
+    const w = weeks.find(x => dom >= x.start && dom <= x.end);
+    if (w) w.count++;
+  });
+
+  // Realtime date range label — injected next to the card title (no HTML edit needed)
+  const card = el.closest('.card');
+  const titleEl = card ? card.querySelector('.card-title') : null;
+  if (titleEl) {
+    titleEl.textContent = 'Weekly Complaint Volume (Last 7 Days)';
+    let rangeEl = card.querySelector('#weekly-range');
+    if (!rangeEl) {
+      rangeEl = document.createElement('span');
+      rangeEl.id = 'weekly-range';
+      rangeEl.style.cssText = 'font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto;';
+      titleEl.insertAdjacentElement('afterend', rangeEl);
+    }
+    rangeEl.textContent = monthName + ' 1–' + daysInMonth + ', ' + year;
+  }
+
+  // Distinct color per week so each bar reads separately
+  const colors = ['#1E5FA8', '#1B7A4A', '#B06000', '#7A4FC0', '#C0392B', '#2E86C1'];
+  const max = Math.max(...weeks.map(w => w.count), 1);
+
+  el.innerHTML = weeks.map((w, i) =>
     '<div class="bar-wrap">' +
-    '<div class="bar-val">' + h + '</div>' +
-    '<div class="bar" style="height:' + Math.max(4, Math.round((h / max) * 100)) + 'px"></div>' +
-    '<div class="bar-lbl">W' + (i + 1) + '</div></div>'
+    '<div class="bar-val">' + w.count + '</div>' +
+    '<div class="bar" style="height:' + Math.max(4, Math.round((w.count / max) * 100)) + 'px;' +
+         'background:' + colors[i % colors.length] + ';border-color:' + colors[i % colors.length] + ';"></div>' +
+    '<div class="bar-lbl" title="Day ' + w.start + '–' + w.end + '">' + w.lbl + '</div></div>'
   ).join('');
 }
 
@@ -702,23 +742,28 @@ async function openMyAccount() {
   document.getElementById('ma_last').textContent  = fmtLogin(p.last_login);
   document.getElementById('ma_count').textContent = (p.login_count || 0) + ' logins';
   document.getElementById('ma_pw').value = '';
+  document.getElementById('ma_curpw').value = '';
   document.getElementById('ma_msg').textContent = '';
   document.getElementById('myAccountModal').classList.add('open');
 }
 function closeMyAccount() { document.getElementById('myAccountModal').classList.remove('open'); }
 async function saveMyAccount() {
+  const curpw = (document.getElementById('ma_curpw').value || '');
+  const msg = document.getElementById('ma_msg');
+  msg.textContent = '';
+  if (!curpw) { msg.style.color = 'var(--red)'; msg.textContent = 'Enter your current password to save changes.'; return; }
   const body = {
     full_name: document.getElementById('ma_name').value.trim(),
     email:     document.getElementById('ma_email').value.trim(),
     phone:     document.getElementById('ma_phone').value.trim(),
     address:   document.getElementById('ma_addr').value.trim(),
     password:  document.getElementById('ma_pw').value || '',
+    current_password: curpw,
   };
-  const msg = document.getElementById('ma_msg');
-  msg.textContent = '';
   const r = await profileCall('update_profile', body);
   if (!r.ok) { msg.style.color = 'var(--red)'; msg.textContent = r.error || 'Could not save.'; return; }
   msg.style.color = 'var(--green)'; msg.textContent = 'Saved.';
+  document.getElementById('ma_curpw').value = '';
   const nameEl = document.querySelector('#sidebar-user .user-name');
   if (nameEl && r.name) nameEl.textContent = r.name;
   setTimeout(closeMyAccount, 700);

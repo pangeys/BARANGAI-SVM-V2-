@@ -57,6 +57,20 @@ case 'login':
         'barangay'    => $brgyName,
     ];
 
+// Remember me — set a 30-day cookie
+$rememberMe = (bool)($input['remember_me'] ?? false);
+if ($rememberMe) {
+    $cookieParams = session_get_cookie_params();
+    setcookie(session_name(), session_id(), [
+        'expires'  => time() + (30 * 24 * 60 * 60),
+        'path'     => $cookieParams['path'],
+        'domain'   => $cookieParams['domain'],
+        'secure'   => $cookieParams['secure'],
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
+
     // write a login entry to the activity log (audit trail)
     $ip = $_SERVER['REMOTE_ADDR'] ?? null;
     $alog = $db->prepare(

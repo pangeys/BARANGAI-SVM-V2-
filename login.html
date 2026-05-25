@@ -12,8 +12,12 @@
   .auth-msg{margin-top:12px;padding:10px 12px;border-radius:8px;font-size:12px;display:none;line-height:1.5}
   .auth-msg.err{display:block;background:rgba(192,57,43,.12);color:#c0392b}
   .auth-msg.ok{display:block;background:rgba(30,126,52,.12);color:#1e7e34}
-  .row2{display:flex;gap:12px}
-  .row2 .field{flex:1}
+  .row2 { display: flex; gap: 12px; width: 100%; box-sizing: border-box; }
+  .row2 .field { flex: 1 1 0; min-width: 0; }
+  .row2 .field .inp {
+  width: 100%; min-width: 0;
+  box-sizing: border-box; /* ADD THIS — was missing, causing overflow */
+}
   .auth-hidden{display:none !important}
 
   /* ---- profile modal (added) ---- */
@@ -199,7 +203,11 @@ async function doLogin(){
     var res = await fetch(AUTH + '?action=login', {
       method:'POST', headers:{'Content-Type':'application/json'},
       credentials:'include',
-      body: JSON.stringify({identifier:id, password:pw})
+      body: JSON.stringify({
+    identifier: id,
+    password: pw,
+    remember_me: document.querySelector('input[type="checkbox"]').checked
+})
     });
     var data = await res.json();
     if (!data.ok){

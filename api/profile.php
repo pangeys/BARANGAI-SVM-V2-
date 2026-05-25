@@ -73,6 +73,21 @@ case 'update_profile':
     $chk->store_result();
     if ($chk->num_rows > 0) { $chk->close(); out(false, ['error' => 'Email already in use.'], 409); }
     $chk->close();
+
+    // ── Verify current password before saving (skipped on first-login setup) ──
+    $pcCheck = $db->prepare('SELECT password_hash, profile_completed FROM users WHERE id = ? LIMIT 1');
+    $pcCheck->bind_param('i', $u['id']);
+    $pcCheck->execute();
+    $pcRow = $pcCheck->get_result()->fetch_assoc();
+    $pcCheck->close();
+    $alreadySetup = $pcRow && (int)$pcRow['profile_completed'] === 1;
+    if ($alreadySetup) {
+        $current = $input['current_password'] ?? '';
+        if ($current === '') out(false, ['error' => 'Enter your current password to save changes.'], 422);
+        if (!password_verify($current, $pcRow['password_hash']))
+            out(false, ['error' => 'Current password is incorrect.'], 401);
+    }
+
     if ($newpw !== '') {
         if (strlen($newpw) < 6) out(false, ['error' => 'Password must be at least 6 characters.'], 422);
         $hash = password_hash($newpw, PASSWORD_DEFAULT);
@@ -161,11 +176,9 @@ case 'activity_log':
     $stmt->close();
     out(true, ['log' => $log]);
 
-/* ── ADMIN STATS (admin only) — counts actions each admin performed ── */
 case 'staff_stats':
     $admin = require_admin();
     $bid   = (int)$admin['barangay_id'];
-
     $stmt = $db->prepare(
         "SELECT user_name, action, detail
            FROM activity_log
@@ -175,7 +188,6 @@ case 'staff_stats':
     $stmt->bind_param('i', $bid);
     $stmt->execute();
     $res = $stmt->get_result();
-
     $byUser = [];
     while ($r = $res->fetch_assoc()) {
         $name = $r['user_name'] ?: 'Unknown';
@@ -188,7 +200,6 @@ case 'staff_stats':
         }
     }
     $stmt->close();
-
     $u = $db->prepare("SELECT full_name, role FROM users WHERE barangay_id = ? AND role IN ('admin','staff')");
     $u->bind_param('i', $bid);
     $u->execute();
@@ -199,7 +210,6 @@ case 'staff_stats':
         if (!isset($byUser[$row['full_name']])) $byUser[$row['full_name']] = ['resolved'=>0,'closed'=>0,'cats'=>[]];
     }
     $u->close();
-
     $stats = [];
     foreach ($byUser as $name => $d) {
         arsort($d['cats']);

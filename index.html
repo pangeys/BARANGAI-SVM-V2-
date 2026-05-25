@@ -19,7 +19,7 @@
       <div class="sub">Barangay Intelligent Case Tracking System</div>
     </div>
     <div id="sidebar-user">
-      <div class="user-ava">JD</div>
+      <div class="user-ava">BAI</div>
       <div>
         <div class="user-name">Nicole | Airon | Darrel</div>
         <div class="user-role">CS - 3IS2</div>
@@ -400,7 +400,7 @@
     <div id="report-list"></div>
     <div>
       <div class="card">
-        <div class="card-header"><div class="card-title">Weekly Complaint Volume</div></div>
+        <div class="card-header"><div class="card-title">Daily Complaint Volume (Last 7 Days)</div></div>
         <div class="card-body">
           <div class="bars" style="height:120px;" id="weekly-bars"></div>
         </div>
@@ -1018,10 +1018,13 @@
         <div class="field"><div class="label">Email <span>*</span></div><input class="inp" id="ma_email" type="email"></div>
         <div class="field"><div class="label">Phone</div><input class="inp" id="ma_phone"></div>
       </div>
-      <div class="form-row full"><div class="field"><div class="label">Address</div><input class="inp" id="ma_addr"></div></div>
       <div class="form-row">
+        <div class="field"><div class="label">Position / Office</div><input class="inp" id="ma_addr" placeholder="e.g. Barangay Secretary"></div>
         <div class="field"><div class="label">Role (read only)</div><input class="inp filled" id="ma_role" disabled></div>
+      </div>
+      <div class="form-row">
         <div class="field"><div class="label">New password (optional)</div><input class="inp" id="ma_pw" type="password" placeholder="Leave blank to keep"></div>
+        <div class="field"><div class="label">Current password <span>*</span></div><input class="inp" id="ma_curpw" type="password" placeholder="Required to save"></div>
       </div>
       <div style="display:flex;gap:16px;font-size:11px;color:var(--text3);margin-top:4px;">
         <span>Last login: <b id="ma_last">—</b></span>
