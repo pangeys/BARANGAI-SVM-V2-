@@ -1,10 +1,4 @@
 <?php
-/* ═══════════════════════════════════════════════════════════
-   BICTS — profile.php
-   Handles: my profile (get/update), first-login completion,
-            user management (admin only), and the activity log.
-   Style: mysqli + prepared statements (matches auth.php).
-═══════════════════════════════════════════════════════════ */
 if (session_status() === PHP_SESSION_NONE) session_start();
 require_once 'config.php';
 
@@ -16,7 +10,6 @@ function out($ok, $data = [], $code = 200) {
     exit;
 }
 
-/* ---- helpers ---------------------------------------------- */
 function current_user() {
     return $_SESSION['user'] ?? null;
 }
@@ -51,7 +44,6 @@ $db     = getDB();
 
 switch ($action) {
 
-/* ── MY PROFILE: read full details for the logged-in user ──── */
 case 'get_profile':
     $u = require_login();
     $stmt = $db->prepare(
@@ -66,63 +58,41 @@ case 'get_profile':
     if (!$row) out(false, ['error' => 'User not found.'], 404);
     out(true, ['profile' => $row]);
 
-/* ── UPDATE MY PROFILE (also used by first-login setup) ────── */
 case 'update_profile':
     $u = require_login();
-
     $name    = trim($input['full_name'] ?? '');
     $email   = trim($input['email']     ?? '');
     $phone   = trim($input['phone']     ?? '');
     $address = trim($input['address']   ?? '');
-    $newpw   = $input['password']        ?? '';   // optional
-
-    // Role is intentionally NOT editable here — display only on the client.
-    if ($name === '' || $email === '')
-        out(false, ['error' => 'Name and email are required.'], 422);
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL))
-        out(false, ['error' => 'Invalid email address.'], 422);
-
-    // email must be unique across other users
+    $newpw   = $input['password']        ?? '';
+    if ($name === '' || $email === '') out(false, ['error' => 'Name and email are required.'], 422);
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) out(false, ['error' => 'Invalid email address.'], 422);
     $chk = $db->prepare('SELECT id FROM users WHERE email = ? AND id <> ?');
     $chk->bind_param('si', $email, $u['id']);
     $chk->execute();
     $chk->store_result();
     if ($chk->num_rows > 0) { $chk->close(); out(false, ['error' => 'Email already in use.'], 409); }
     $chk->close();
-
     if ($newpw !== '') {
         if (strlen($newpw) < 6) out(false, ['error' => 'Password must be at least 6 characters.'], 422);
         $hash = password_hash($newpw, PASSWORD_DEFAULT);
-        $stmt = $db->prepare(
-            'UPDATE users SET full_name=?, email=?, phone=?, address=?, password_hash=?, profile_completed=1 WHERE id=?'
-        );
+        $stmt = $db->prepare('UPDATE users SET full_name=?, email=?, phone=?, address=?, password_hash=?, profile_completed=1 WHERE id=?');
         $stmt->bind_param('sssssi', $name, $email, $phone, $address, $hash, $u['id']);
     } else {
-        $stmt = $db->prepare(
-            'UPDATE users SET full_name=?, email=?, phone=?, address=?, profile_completed=1 WHERE id=?'
-        );
+        $stmt = $db->prepare('UPDATE users SET full_name=?, email=?, phone=?, address=?, profile_completed=1 WHERE id=?');
         $stmt->bind_param('ssssi', $name, $email, $phone, $address, $u['id']);
     }
     $ok = $stmt->execute();
     $stmt->close();
     if (!$ok) out(false, ['error' => 'Update failed.'], 500);
-
-    // keep the session display name in sync
     $_SESSION['user']['name'] = $name;
     log_activity($db, 'profile_updated', 'Updated own profile');
     out(true, ['message' => 'Profile saved.', 'name' => $name]);
 
-/* ── USERS LIST (admin only, scoped to own barangay) ───────── */
 case 'list_users':
     $admin = require_admin();
     $bid   = (int)$admin['barangay_id'];
-    $stmt  = $db->prepare(
-        'SELECT id, username, full_name, email, phone, role, status,
-                last_login, login_count
-           FROM users
-          WHERE barangay_id = ?
-          ORDER BY role, full_name'
-    );
+    $stmt  = $db->prepare('SELECT id, username, full_name, email, phone, role, status, last_login, login_count FROM users WHERE barangay_id = ? ORDER BY role, full_name');
     $stmt->bind_param('i', $bid);
     $stmt->execute();
     $res  = $stmt->get_result();
@@ -131,7 +101,6 @@ case 'list_users':
     $stmt->close();
     out(true, ['users' => $list]);
 
-/* ── CREATE USER (admin only) ──────────────────────────────── */
 case 'create_user':
     $admin = require_admin();
     $name  = trim($input['full_name'] ?? '');
@@ -139,27 +108,19 @@ case 'create_user':
     $uname = trim($input['username']  ?? '');
     $role  = trim($input['role']      ?? 'staff');
     $pw    = $input['password']        ?? '';
-
     $allowedRoles = ['admin', 'staff', 'viewer'];
     if (!in_array($role, $allowedRoles, true)) $role = 'staff';
-    if ($name === '' || $email === '' || $uname === '' || strlen($pw) < 6)
-        out(false, ['error' => 'All fields required (password min 6 chars).'], 422);
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL))
-        out(false, ['error' => 'Invalid email.'], 422);
-
+    if ($name === '' || $email === '' || $uname === '' || strlen($pw) < 6) out(false, ['error' => 'All fields required (password min 6 chars).'], 422);
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) out(false, ['error' => 'Invalid email.'], 422);
     $chk = $db->prepare('SELECT id FROM users WHERE email = ? OR username = ?');
     $chk->bind_param('ss', $email, $uname);
     $chk->execute();
     $chk->store_result();
     if ($chk->num_rows > 0) { $chk->close(); out(false, ['error' => 'Username or email already exists.'], 409); }
     $chk->close();
-
     $hash = password_hash($pw, PASSWORD_DEFAULT);
     $bid  = (int)$admin['barangay_id'];
-    $stmt = $db->prepare(
-        'INSERT INTO users (username, full_name, email, password_hash, role, barangay_id, status, profile_completed)
-         VALUES (?, ?, ?, ?, ?, ?, "active", 0)'
-    );
+    $stmt = $db->prepare('INSERT INTO users (username, full_name, email, password_hash, role, barangay_id, status, profile_completed) VALUES (?, ?, ?, ?, ?, ?, "active", 0)');
     $stmt->bind_param('sssssi', $uname, $name, $email, $hash, $role, $bid);
     $ok = $stmt->execute();
     $stmt->close();
@@ -167,29 +128,19 @@ case 'create_user':
     log_activity($db, 'user_created', "Created user: $name ($role)");
     out(true, ['message' => 'User created.']);
 
-/* ── UPDATE USER ROLE / STATUS (admin only) ────────────────── */
 case 'update_user':
     $admin  = require_admin();
     $id     = (int)($input['id']     ?? 0);
     $role   = trim($input['role']    ?? '');
     $status = trim($input['status']  ?? '');
-
     if ($id <= 0) out(false, ['error' => 'Missing user id.'], 422);
-    if ($id === (int)$admin['id'] && $role && $role !== 'admin')
-        out(false, ['error' => "You can't remove your own admin role."], 422);
-
+    if ($id === (int)$admin['id'] && $role && $role !== 'admin') out(false, ['error' => "You can't remove your own admin role."], 422);
     $allowedRoles  = ['admin', 'staff', 'viewer'];
     $allowedStatus = ['active', 'disabled'];
     if ($role   && !in_array($role,   $allowedRoles,  true)) out(false, ['error' => 'Bad role.'], 422);
     if ($status && !in_array($status, $allowedStatus, true)) out(false, ['error' => 'Bad status.'], 422);
-
-    // only touch users in the admin's own barangay
     $bid  = (int)$admin['barangay_id'];
-    $stmt = $db->prepare(
-        'UPDATE users SET role = COALESCE(NULLIF(?,""), role),
-                          status = COALESCE(NULLIF(?,""), status)
-           WHERE id = ? AND barangay_id = ?'
-    );
+    $stmt = $db->prepare('UPDATE users SET role = COALESCE(NULLIF(?,""), role), status = COALESCE(NULLIF(?,""), status) WHERE id = ? AND barangay_id = ?');
     $stmt->bind_param('ssii', $role, $status, $id, $bid);
     $ok = $stmt->execute();
     $stmt->close();
@@ -197,18 +148,11 @@ case 'update_user':
     log_activity($db, 'user_updated', "Updated user #$id (role=$role, status=$status)");
     out(true, ['message' => 'User updated.']);
 
-/* ── ACTIVITY LOG (admin only, own barangay) ───────────────── */
 case 'activity_log':
     $admin = require_admin();
     $bid   = (int)$admin['barangay_id'];
     $limit = min(200, max(1, (int)($_GET['limit'] ?? 50)));
-    $stmt  = $db->prepare(
-        'SELECT user_name, action, detail, ip_address, created_at
-           FROM activity_log
-          WHERE barangay_id = ? OR barangay_id IS NULL
-          ORDER BY created_at DESC
-          LIMIT ?'
-    );
+    $stmt  = $db->prepare('SELECT user_name, action, detail, ip_address, created_at FROM activity_log WHERE barangay_id = ? OR barangay_id IS NULL ORDER BY created_at DESC LIMIT ?');
     $stmt->bind_param('ii', $bid, $limit);
     $stmt->execute();
     $res = $stmt->get_result();
@@ -217,28 +161,60 @@ case 'activity_log':
     $stmt->close();
     out(true, ['log' => $log]);
 
-/* ── STAFF STATS (admin only) ──────────────────────────────── */
+/* ── ADMIN STATS (admin only) — counts actions each admin performed ── */
 case 'staff_stats':
     $admin = require_admin();
     $bid   = (int)$admin['barangay_id'];
-    // cases handled = complaints where this user is the assigned officer
+
     $stmt = $db->prepare(
-        'SELECT u.id, u.full_name, u.role,
-                COUNT(c.id)                                    AS total_cases,
-                SUM(c.status = "Resolved")                     AS resolved_cases
-           FROM users u
-           LEFT JOIN complaints c
-                  ON c.officer = u.full_name AND c.barangay_id = u.barangay_id
-          WHERE u.barangay_id = ? AND u.role IN ("admin","staff")
-          GROUP BY u.id, u.full_name, u.role
-          ORDER BY total_cases DESC'
+        "SELECT user_name, action, detail
+           FROM activity_log
+          WHERE barangay_id = ?
+            AND action IN ('complaint_resolved','complaint_closed')"
     );
     $stmt->bind_param('i', $bid);
     $stmt->execute();
-    $res   = $stmt->get_result();
-    $stats = [];
-    while ($r = $res->fetch_assoc()) $stats[] = $r;
+    $res = $stmt->get_result();
+
+    $byUser = [];
+    while ($r = $res->fetch_assoc()) {
+        $name = $r['user_name'] ?: 'Unknown';
+        if (!isset($byUser[$name])) $byUser[$name] = ['resolved'=>0,'closed'=>0,'cats'=>[]];
+        if ($r['action'] === 'complaint_resolved') $byUser[$name]['resolved']++;
+        else                                        $byUser[$name]['closed']++;
+        if (preg_match('/\[cat:([^\]]*)\]/', $r['detail'] ?? '', $m)) {
+            $cat = trim($m[1]);
+            if ($cat !== '') $byUser[$name]['cats'][$cat] = ($byUser[$name]['cats'][$cat] ?? 0) + 1;
+        }
+    }
     $stmt->close();
+
+    $u = $db->prepare("SELECT full_name, role FROM users WHERE barangay_id = ? AND role IN ('admin','staff')");
+    $u->bind_param('i', $bid);
+    $u->execute();
+    $ur = $u->get_result();
+    $roleOf = [];
+    while ($row = $ur->fetch_assoc()) {
+        $roleOf[$row['full_name']] = $row['role'];
+        if (!isset($byUser[$row['full_name']])) $byUser[$row['full_name']] = ['resolved'=>0,'closed'=>0,'cats'=>[]];
+    }
+    $u->close();
+
+    $stats = [];
+    foreach ($byUser as $name => $d) {
+        arsort($d['cats']);
+        $parts = [];
+        foreach ($d['cats'] as $cat => $n) $parts[] = $n . '× ' . $cat;
+        $stats[] = [
+            'full_name' => $name,
+            'role'      => $roleOf[$name] ?? 'admin',
+            'resolved'  => $d['resolved'],
+            'closed'    => $d['closed'],
+            'handled'   => $d['resolved'] + $d['closed'],
+            'cats'      => implode(', ', $parts),
+        ];
+    }
+    usort($stats, function ($a, $b) { return $b['handled'] - $a['handled']; });
     out(true, ['stats' => $stats]);
 
 default:

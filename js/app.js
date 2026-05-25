@@ -33,6 +33,14 @@ let _currentDetailComplaintId = null;
 let nextId     = 1;
 let notifStore = [];
 
+/* ── VIEWER PRIVACY (UI-level) ── */
+function isViewer() { return (window.CURRENT_USER || {}).role === 'viewer'; }
+function mask(text) {
+  if (!isViewer()) return text;
+  const s = String(text == null ? '' : text);
+  return s.trim() ? '••••••' : s;
+}
+
 /* ── Load everything from the database on boot ── */
 async function loadFromDB() {
   try {
@@ -99,6 +107,7 @@ async function addComplaint(data) {
 
 /* ── Resolve a complaint ── */
 async function resolveComplaint(id) {
+  if (isViewer()) return;
   const c = complaints.find(x => x.id === id);
   if (!c || c.status === 'Resolved' || c.status === 'Closed') return;
 
@@ -130,6 +139,7 @@ async function resolveComplaint(id) {
 
 /* ── Close a complaint (final state, distinct from Resolved) ── */
 async function closeComplaint(id, reason) {
+  if (isViewer()) return;
   const c = complaints.find(x => x.id === id);
   if (!c || c.status === 'Resolved' || c.status === 'Closed') return;
  
@@ -173,6 +183,7 @@ async function submitCloseCase() {
 
 /* ── Advance complaint to the next status step ── */
 async function advanceStatus(id) {
+  if (isViewer()) return;
   const c = complaints.find(x => x.id === id);
   if (!c) return;
 
@@ -1153,6 +1164,7 @@ async function deleteOfficer(id) {
  * @param {string} complaintId  — e.g. '#001'
  */
 async function openAssignModal(complaintId) {
+  if (isViewer()) return;
   if (!complaintId) return;
   _assignComplaintId = complaintId;
  

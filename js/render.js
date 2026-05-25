@@ -105,7 +105,7 @@ function renderDashboardStats() {
       : '<span style="font-size:11px;color:' + (c.status === 'Closed' ? 'var(--text3)' : 'var(--green)') + ';font-weight:600;">' + (c.status === 'Closed' ? '⊘ Closed' : '✓ Resolved') + '</span>';
     return '<tr>' +
       '<td class="mono">' + c.id + '</td>' +
-      '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + c.description + '</td>' +
+      '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + mask(c.description) + '</td>' +
       '<td><span class="badge b-blue">' + c.category + '</span></td>' +
       '<td><span class="badge ' + c.pb + '">' + c.priority + '</span></td>' +
       '<td><span class="badge ' + c.sb + '">' + c.status + '</span></td>' +
@@ -150,7 +150,7 @@ function renderComplaints() {
     return '<tr>' +
       '<td class="mono">' + c.id + '</td>' +
       '<td style="font-size:10px;color:var(--text3)">' + c.date + '</td>' +
-      '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + c.description + '</td>' +
+      '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + mask(c.description) + '</td>' +
       '<td><span class="badge b-blue">' + c.category + '</span></td>' +
       '<td><span class="badge ' + c.pb + '" style="font-family:var(--mono)">' + c.score + ' – ' + c.priority + '</span></td>' +
       '<td style="font-size:11px">' + c.officer + '</td>' +
@@ -215,7 +215,7 @@ function renderKanban() {
     const cardHTML = cards.length === 0
       ? '<div style="text-align:center;padding:22px 12px;color:var(--text3);font-size:11px;background:var(--bg);border-radius:var(--r);border:1px dashed var(--border);">No cases</div>'
       : cards.map(c => {
-          const shortDesc = c.description.length > 60 ? c.description.slice(0, 60) + '…' : c.description;
+          const shortDesc = isViewer() ? '••••••' : (c.description.length > 60 ? c.description.slice(0, 60) + '…' : c.description);
           let actions = '';
           if (col.status !== 'Resolved' && col.status !== 'Closed') {
             actions += '<button class="btn btn-sm" style="background:var(--green);color:#fff;border:none;font-size:10px;padding:3px 8px;" onclick="resolveComplaint(\'' + c.id + '\')">✓ Resolve</button>';
@@ -555,8 +555,9 @@ function fmtLogin(val) {
   return isNaN(d) ? val : d.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 function roleBadge(role) {
-  const cls = role === 'admin' ? 'b-blue' : role === 'staff' ? 'b-green' : 'b-gray';
-  return '<span class="badge ' + cls + '">' + role + '</span>';
+  const cls   = role === 'admin' ? 'b-blue' : role === 'staff' ? 'b-green' : 'b-gray';
+  const label = role === 'staff' ? 'resident' : role;
+  return '<span class="badge ' + cls + '">' + label + '</span>';
 }
 function statusBadgeUser(status) {
   const cls = status === 'active' ? 'b-green' : 'b-red';
@@ -672,21 +673,18 @@ async function loadAuditLog() {
 async function loadStaffStats() {
   const tbody = document.getElementById('stats-tbody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">Loading…</td></tr>';
   const r = await profileCall('staff_stats', null, 'GET');
-  if (!r.ok)           { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">' + (r.error || 'Could not load stats.') + '</td></tr>'; return; }
-  if (!r.stats.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">No staff data yet.</td></tr>'; return; }
+  if (!r.ok)           { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">' + (r.error || 'Could not load stats.') + '</td></tr>'; return; }
+  if (!r.stats.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text3);font-size:12px;">No admin activity yet.</td></tr>'; return; }
   tbody.innerHTML = r.stats.map(s => {
-    const total = Number(s.total_cases) || 0;
-    const res   = Number(s.resolved_cases) || 0;
-    const rate  = total ? Math.round((res / total) * 100) : 0;
+    const handled = Number(s.handled) || 0;
     return '<tr>' +
       '<td style="font-weight:500">' + (s.full_name || '—') + ' ' + roleBadge(s.role) + '</td>' +
-      '<td style="font-family:var(--mono);text-align:center">' + total + '</td>' +
-      '<td style="font-family:var(--mono);text-align:center">' + res + '</td>' +
-      '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:8px">' +
-        '<div class="progress" style="flex:1"><div class="progress-fill" style="width:' + rate + '%"></div></div>' +
-        '<span style="font-family:var(--mono);font-size:11px">' + rate + '%</span></div></td>' +
+      '<td style="font-family:var(--mono);text-align:center;color:var(--green);font-weight:700">' + (Number(s.resolved) || 0) + '</td>' +
+      '<td style="font-family:var(--mono);text-align:center;color:var(--text3);font-weight:700">' + (Number(s.closed) || 0) + '</td>' +
+      '<td style="font-family:var(--mono);text-align:center;font-weight:700">' + handled + '</td>' +
+      '<td style="font-size:11px;color:var(--text2)">' + (s.cats || '<span style="color:var(--text3)">No cases processed yet</span>') + '</td>' +
       '</tr>';
   }).join('');
 }
